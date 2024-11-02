@@ -34,6 +34,6 @@
   - also app needs have really good UX to atract users event without need of tokens (usefull dashboards)
 - less frequest period of requests
 
-## Reference
+## Resources (inspiration)
 - https://dspace.cvut.cz/bitstream/handle/10467/103384/F8-BP-2021-Malach-Ondrej-thesis.pdf?sequence=-1&isAllowed=y
 - https://is.muni.cz/th/ilu2h/Bakala_r_ska__pra_ce_Divis_ova__vec_er.pdf
