@@ -1,8 +1,8 @@
 # dp-reality
 
 ## Existing projects that could be utilised:
-- https://github.com/Ryxwaer/bazos_watcher
-- https://github.com/Ryxwaer/reality_bot
+- https://github.com/Ryxwaer/bazos_watcher (private)
+- https://github.com/Ryxwaer/reality_bot (private)
 
 ## Features
 - create and configure bots (only one for free teer)
@@ -13,6 +13,7 @@
   - mails will be sent from custom domain
 - dashboard with user's bots statistics
 - global statistics for preset metrics (eg. price change of 1 room flats in Brno over years)
+- high level of error handling and failure recovery
   
 ## Technology stack
 - mongodb
