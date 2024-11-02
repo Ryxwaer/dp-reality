@@ -4,16 +4,26 @@
 - https://github.com/Ryxwaer/bazos_watcher
 - https://github.com/Ryxwaer/reality_bot
 
-## App functionalities
+## Features
 - create and configure bots (only one for free teer)
-
+- receive mails
+  - same minimalistic format of realities across all sources
+  - app will check all defined reality services within fixed time period and then send one mail for each user with newly found realities
+  - unsubscribe button for the emails
+  - mails will be sent from custom domain
+- dashboard with user's bots statistics
+- global statistics for preset metrics (eg. price change of 1 room flats in Brno over years)
+  
 ## Technology stack
 - mongodb
 - nuxt 3 - fe
 - different languages with microservice architecture - be
 
 ## Deployment
-- database and app will be selfhosted on rpi4 and accessible from internet on custom domain
+- whole app will be selfhosted on rpi4 ubuntu server using dockers:
+  - mailserver (mailcow)
+  - app (all of its parts)
+  - mongodb
 
 ## Free tear limitations
 - only one bot running
