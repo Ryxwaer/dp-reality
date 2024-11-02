@@ -19,6 +19,10 @@
 - mongodb
 - nuxt 3 - fe
 - different languages with microservice architecture - be
+  - API Gateway - NestJS
+  - Bazos - NestJS
+  - SReality - python (fastapi)
+  - monitoring and logging - Prometheus/Grafana
 
 ## Deployment
 - whole app will be selfhosted on rpi4 ubuntu server using dockers:
