@@ -5,7 +5,7 @@
 - https://github.com/Ryxwaer/reality_bot (private)
 
 ## Features
-- create and configure bots (only one for free teer)
+- create and configure bots (only one for free tier)
 - receive mails
   - same minimalistic format of realities across all sources
   - app will check all defined reality services within fixed time period and then send one mail for each user with newly found realities
@@ -25,7 +25,7 @@
   - monitoring and logging - Prometheus/Grafana
 
 ## Deployment
-- whole app will be selfhosted on rpi4 ubuntu server using dockers:
+- whole app will be selfhosted on rpi5 ubuntu (fedora) server using dockers:
   - mailserver (mailcow)
   - app (all of its parts)
   - mongodb
