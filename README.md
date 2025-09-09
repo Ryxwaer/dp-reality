@@ -30,7 +30,7 @@
   - app (all of its parts)
   - mongodb
 
-## Free tear limitations
+## Free tier limitations
 - only one bot running
 - need to atract users to use it not just setup bot and rely on mails for the reast of time
   - impllemnet some tokens that would be refreshed on app wisit
