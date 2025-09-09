@@ -1,6 +1,6 @@
 # dp-reality
 
-## Existing projects that could be utilised:
+## Existing projects that could be utilized:
 - https://github.com/Ryxwaer/bazos_watcher (private)
 - https://github.com/Ryxwaer/reality_bot (private)
 
