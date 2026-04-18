@@ -1,49 +1,73 @@
 # dp-reality
 
-## Existing projects that could be utilized:
-- https://github.com/Ryxwaer/bazos_watcher (private)
-- https://github.com/Ryxwaer/reality_bot (private)
+Web content aggregation platform for Czech real estate listings.
+Built as a microservices architecture for a Master's thesis at BUT FIT.
 
-## Features
-- create and configure bots (only one for free tier)
-- receive mails
-  - same minimalistic format of realities across all sources
-  - app will check all defined reality services within fixed time period and then send one mail for each user with newly found realities
-  - unsubscribe button for the emails
-  - mails will be sent from custom domain
-- dashboard with user's bots statistics
-- global statistics for preset metrics (eg. price change of 1 room flats in Brno over years)
-- high level of error handling and failure recovery
-  
-## Technology stack
-- mongodb
-- nuxt 3 - fe
-- different languages with microservice architecture - be
-  - API Gateway - NestJS
-  - Bazos - NestJS
-  - SReality - python (fastapi)
-  - monitoring and logging - Prometheus/Grafana
+## Architecture
 
-## Deployment
-- whole app will be selfhosted on rpi5 ubuntu (fedora) server using dockers:
-  - mailserver (mailcow)
-  - app (all of its parts)
-  - mongodb
+```
+services/
+  modules/           # Always-on gRPC BotModule servers (K8s Deployments)
+    bazos/           # Python — Bazos.cz module definition & config API
+    sreality/        # NestJS (TypeScript) — Sreality.cz module definition & config API
+  jobs/              # Scraper jobs (scheduler in Phase 1, K8s CronJobs in Phase 2)
+    bazos/           # Python — Bazos.cz HTML scraper
+    sreality/        # NestJS (TypeScript) — Sreality.cz API scraper
+  notification/      # Go — email notification consumer
+  frontend/          # Nuxt 4 (TypeScript) — dashboard & BFF layer
+proto/               # Shared Protocol Buffer definitions (BotModule gRPC contract)
+```
 
-## Free tier limitations
-- only one bot running
-- need to atract users to use it not just setup bot and rely on mails for the reast of time
-  - impllemnet some tokens that would be refreshed on app wisit
-  - tokens could be auto spent on extending mails period (another week or so)
-  - also app needs have really good UX to atract users event without need of tokens (usefull dashboards)
-- less frequest period of requests
+## Technology Stack
 
-## Roadmap (deadlines)
-- 2025-02-01 - brainstorm, try to come up with as many ideas as possible
-- 2025-09-01 - by now the assignment should have fixed form and first prototypes should be prepared
-- 2025-02-01 - all functional parts of the app implemented and deployed on the server (ready for testing)
-- untill submission (last semester) - testing + improving documentation (floading tests, ux tests, statistics) 
+| Component          | Technology                |
+|--------------------|---------------------------|
+| Frontend           | Nuxt 4 (Vue.js, TypeScript) |
+| Sreality scraper   | NestJS (TypeScript)       |
+| Bazos scraper      | Python (httpx, BeautifulSoup) |
+| Notification       | Go                        |
+| Database           | MongoDB                   |
+| Message broker     | RabbitMQ                  |
+| Inter-service RPC  | gRPC (Protocol Buffers)   |
+| Orchestration      | K3s (Phase 2+)            |
 
-## Resources (inspiration)
-- https://dspace.cvut.cz/bitstream/handle/10467/103384/F8-BP-2021-Malach-Ondrej-thesis.pdf?sequence=-1&isAllowed=y
-- https://is.muni.cz/th/ilu2h/Bakala_r_ska__pra_ce_Divis_ova__vec_er.pdf
+## Communication Patterns
+
+- **Synchronous**: Frontend ↔ MongoDB (user data, listings, bot configs)
+- **Asynchronous**: Scrapers → RabbitMQ (`scrape.completed`) → Notification Service
+- **gRPC**: Frontend BFF ↔ Bot Modules (ParseUrl, GetConfigSchema, GetOverview)
+
+## Module Architecture
+
+Each scraper source is split into two containers:
+
+- **Module** (`services/modules/<source>/`): Always-on gRPC server implementing the
+  `BotModule` service. Handles URL parsing, config schema, and overview queries.
+  Self-registers in MongoDB `modules` collection at startup.
+- **Job** (`services/jobs/<source>/`): Scraper logic that fetches listings, persists to
+  MongoDB, and publishes `scrape.completed` events to RabbitMQ. Runs on a scheduler
+  in Phase 1; becomes a Kubernetes CronJob in Phase 2.
+
+Adding a new source requires deploying one module and one job container —
+no changes to the frontend or any other service.
+
+## Development
+
+```bash
+cp .env.example .env    # configure MongoDB URI, RabbitMQ, SMTP
+docker compose up --build
+```
+
+- Dashboard: http://localhost:3000
+- RabbitMQ management: http://localhost:15672
+
+## Deployment Phases
+
+1. **Phase 1 — Alpha**: Single-node Docker Compose, standalone MongoDB, scheduler-based scrapers
+2. **Phase 2 — Release**: K3s cluster, MongoDB ReplicaSet, CronJob scrapers with topology spread
+3. **Phase 3 — Production**: Multi-node edge deployment, MongoDB Atlas, KEDA autoscaling
+
+## Related Repositories
+
+- [bazos_watcher](https://github.com/Ryxwaer/bazos_watcher) (private) — original Bazos PoC
+- [reality_bot](https://github.com/Ryxwaer/reality_bot) (private) — original Sreality PoC

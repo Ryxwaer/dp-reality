@@ -1,0 +1,132 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  module-bazos:
+    build:
+      context: .
+      dockerfile: services/modules/bazos/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_NAME: module-bazos
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/modules/bazos/src
+          target: /app
+        - action: rebuild
+          path: ./services/modules/bazos/requirements.txt
+
+  module-sreality:
+    build:
+      context: .
+      dockerfile: services/modules/sreality/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_NAME: module-sreality
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/modules/sreality/src
+          target: /app
+        - action: rebuild
+          path: ./services/modules/sreality/requirements.txt
+
+  job-bazos:
+    build:
+      context: .
+      dockerfile: services/jobs/bazos/Dockerfile
+    env_file: .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      SCRAPE_INTERVAL_MINUTES: ${BAZOS_INTERVAL:-5}
+      SCRAPE_PAGES: ${BAZOS_PAGES:-5}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/jobs/bazos/src
+          target: /app
+        - action: rebuild
+          path: ./services/jobs/bazos/requirements.txt
+
+  job-sreality:
+    build:
+      context: .
+      dockerfile: services/jobs/sreality/Dockerfile
+    env_file: .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      SCRAPE_INTERVAL_MINUTES: ${SREALITY_INTERVAL:-10}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/jobs/sreality/src
+          target: /app
+        - action: rebuild
+          path: ./services/jobs/sreality/requirements.txt
+
+  notification:
+    build:
+      context: .
+      dockerfile: services/notification/Dockerfile
+    env_file: .env
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/notification/src
+          target: /app
+        - action: rebuild
+          path: ./services/notification/requirements.txt
+
+  frontend:
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+    env_file: .env
+    environment:
+      NUXT_MONGODB_URI: ${MONGODB_URI}
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: ./services/frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .output/
+            - .nuxt/
+        - action: rebuild
+          path: ./services/frontend/package.json
+
+volumes:
+  rabbitmq_data:
