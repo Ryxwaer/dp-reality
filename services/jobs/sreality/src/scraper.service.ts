@@ -1,31 +1,70 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { config } from './config.js';
 import { RepositoryService } from './repository.service.js';
 import { PublisherService } from './publisher.service.js';
+import type { Listing } from './listing.schema.js';
 
+/**
+ * Subset of the sreality public estates API we consume. Only the
+ * fields we actually persist or derive from are listed — keeping
+ * this narrow catches shape drift with a TS error instead of silent
+ * `undefined` in the database.
+ */
 interface SrealityEstate {
   hash_id: number;
   name: string;
   locality: string;
   price: number;
-  seo: { locality: string };
+  seo: {
+    locality: string;
+    category_main_cb?: number;
+    category_sub_cb?: number;
+    category_type_cb?: number;
+  };
+  gps?: { lat: number; lon: number };
   labelsAll?: string[][];
 }
 
-interface ListingData {
-  source: string;
-  source_id: string;
-  title: string;
-  price?: number;
-  price_type: string;
-  property_type: string;
-  disposition?: string;
-  city?: string;
-  locality_raw?: string;
-  url: string;
-  features: string[];
-}
+/**
+ * Canonical slug tables used only to reconstruct human-friendly
+ * detail URLs. `category_sub_cb` is persisted verbatim on the
+ * listing; the slug is never persisted, so module authors can
+ * safely key on the integer code instead.
+ */
+const APARTMENT_SLUGS: Record<number, string> = {
+  2: '1+kk',
+  3: '1+1',
+  4: '2+kk',
+  5: '2+1',
+  6: '3+kk',
+  7: '3+1',
+  8: '4+kk',
+  9: '4+1',
+  10: '5+kk',
+  11: '5+1',
+  12: '6-a-vice',
+  16: 'atypicky',
+  47: 'pokoj',
+};
+
+const HOUSE_SLUGS: Record<number, string> = {
+  33: 'chata',
+  37: 'rodinny',
+  39: 'vila',
+  43: 'chalupa',
+  44: 'zemedelska-usedlost',
+  48: 'mobilni-dum',
+  54: 'vicegeneracni-dum',
+};
+
+/**
+ * Persisted shape. Intentionally identical to `Listing` minus the
+ * `first_seen` / `last_seen` / `run_id` stamp fields (those live in
+ * the repository's upsert logic).
+ */
+type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
 
 const CATEGORIES = [
   { main: 1, type: 1, priceType: 'sale', propertyType: 'apartment' },
@@ -66,11 +105,12 @@ export class ScraperService implements OnModuleInit {
   private async scrapeCycle(): Promise<void> {
     this.logger.log('Starting scrape cycle');
     try {
+      const runId = randomUUID();
       const listings = await this.fetchAll();
-      this.logger.log(`Fetched ${listings.length} listings`);
-      const newCount = await this.repository.upsertListings(listings);
+      this.logger.log(`Fetched ${listings.length} listings (run ${runId})`);
+      const newCount = await this.repository.upsertListings(listings, runId);
       if (newCount > 0) {
-        await this.publisher.publishCompletion(newCount);
+        await this.publisher.publishCompletion(runId);
       }
       this.consecutiveFailures = 0;
     } catch (err) {
@@ -133,54 +173,70 @@ export class ScraperService implements OnModuleInit {
 
   private parseEstate(
     estate: SrealityEstate,
-    priceType: string,
-    propertyType: string,
+    priceType: 'sale' | 'rent',
+    propertyType: 'apartment' | 'house',
   ): ListingData | null {
     const sourceId = String(estate.hash_id);
     if (!sourceId || sourceId === '0') return null;
 
     const disposition =
-      estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i)?.[1] ?? null;
+      estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i)?.[1] ?? undefined;
+
     const locality = estate.locality ?? '';
     const localityParts = locality.split(',');
     const city =
       localityParts[localityParts.length - 1].trim().split(' - ')[0].trim() ||
-      null;
-    const labels = estate.labelsAll ?? [];
-    const features = Array.isArray(labels[0]) ? [...labels[0]] : [];
+      undefined;
+
+    // `labelsAll[0]` = structural tags (ownership, material, state,
+    // furnishing). `labelsAll[1]` is neighbourhood POIs which we drop.
+    const labels = estate.labelsAll?.[0] ?? [];
+
+    // GeoJSON Point: coordinates in [lon, lat] order (Mongo's
+    // convention, matches `$centerSphere`). Drop when sreality
+    // reports 0/0 which means "unknown".
+    const gps =
+      estate.gps && (estate.gps.lat !== 0 || estate.gps.lon !== 0)
+        ? {
+            type: 'Point' as const,
+            coordinates: [estate.gps.lon, estate.gps.lat] as [number, number],
+          }
+        : undefined;
 
     return {
-      source: 'sreality',
       source_id: sourceId,
       title: estate.name,
       price: estate.price > 0 ? estate.price : undefined,
       price_type: priceType,
       property_type: propertyType,
-      disposition: disposition ?? undefined,
-      city: city ?? undefined,
-      locality_raw: locality || undefined,
+      disposition,
+      locality: locality || undefined,
+      city,
+      gps,
+      category_main_cb: estate.seo?.category_main_cb,
+      category_sub_cb: estate.seo?.category_sub_cb,
+      category_type_cb: estate.seo?.category_type_cb,
+      labels,
       url: this.buildUrl(estate, priceType, propertyType),
-      features,
     };
   }
 
   private buildUrl(
     estate: SrealityEstate,
-    priceType: string,
-    propertyType: string,
+    priceType: 'sale' | 'rent',
+    propertyType: 'apartment' | 'house',
   ): string {
+    const locality = estate.seo?.locality ?? '';
+    if (!locality || !estate.hash_id) return 'https://www.sreality.cz/';
+
     const saleRent = priceType === 'rent' ? 'pronajem' : 'prodej';
     const propSlug = propertyType === 'apartment' ? 'byt' : 'dum';
-    const match = estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i);
-    const dispSlug = match
-      ? match[1]
-          .toLowerCase()
-          .replace('+kk', '-plus-kk')
-          .replace('+', '-plus-')
-      : 'other';
-    const locality = estate.seo?.locality ?? '';
-    return locality && estate.hash_id
-      ? `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${locality}/${estate.hash_id}`
-      : 'https://www.sreality.cz/';
+    const subCb = estate.seo?.category_sub_cb;
+    const table = propertyType === 'apartment' ? APARTMENT_SLUGS : HOUSE_SLUGS;
+    const dispSlug =
+      (subCb !== undefined && table[subCb]) ||
+      (propertyType === 'apartment' ? 'atypicky' : 'rodinny');
+
+    return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${locality}/${estate.hash_id}`;
   }
 }

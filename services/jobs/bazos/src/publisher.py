@@ -1,17 +1,17 @@
 import json
 import logging
-from datetime import datetime, UTC
 
 import aio_pika
 
 EXCHANGE_NAME = "scrape.completed"
 SOURCE = "bazos"
+COLLECTION = "bazos"
 
 logger = logging.getLogger(__name__)
 
 
 async def publish_completion(
-    connection: aio_pika.RobustConnection, new_count: int
+    connection: aio_pika.RobustConnection, run_id: str
 ) -> None:
     async with connection.channel() as channel:
         exchange = await channel.declare_exchange(
@@ -19,9 +19,9 @@ async def publish_completion(
         )
         payload = json.dumps(
             {
+                "run_id": run_id,
                 "source": SOURCE,
-                "new_count": new_count,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "collection": COLLECTION,
             }
         ).encode()
         await exchange.publish(
@@ -31,4 +31,4 @@ async def publish_completion(
             ),
             routing_key="",
         )
-    logger.debug("Published scrape.completed: %d new listings", new_count)
+    logger.debug("Published scrape.completed run=%s", run_id)

@@ -1,20 +1,48 @@
 {
-  "name": "dp-reality-frontend",
-  "version": "0.1.0",
+  "name": "dp-frontend",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare && node scripts/sync-seed-bundles.mjs",
+    "lint": "eslint .",
+    "typecheck": "nuxt typecheck",
+    "seed:sync": "node scripts/sync-seed-bundles.mjs",
+    "dev:wipe": "node scripts/wipe-and-reseed.mjs"
   },
   "dependencies": {
-    "nuxt": "^4.0.0",
-    "mongodb": "^6.10.0",
-    "@grpc/grpc-js": "^1.14.0",
-    "@grpc/proto-loader": "^0.8.0"
+    "@iconify-json/lucide": "^1.2.102",
+    "@iconify-json/simple-icons": "^1.2.78",
+    "@internationalized/date": "^3.12.0",
+    "@nuxt/ui": "^4.6.1",
+    "@tanstack/table-core": "^8.21.3",
+    "@unovis/ts": "^1.6.4",
+    "@unovis/vue": "^1.6.4",
+    "@vueuse/core": "^14.2.1",
+    "@vueuse/nuxt": "^14.2.1",
+    "ajv": "^8.18.0",
+    "amqplib": "^1.0.3",
+    "bcryptjs": "^3.0.3",
+    "date-fns": "^4.1.0",
+    "dompurify": "^3.4.0",
+    "marked": "^18.0.2",
+    "mongodb": "^7.1.1",
+    "nuxt": "^4.4.2",
+    "nuxt-auth-utils": "^0.5.29",
+    "scule": "^1.3.0",
+    "tailwindcss": "^4.2.2",
+    "vue": "^3.5.32",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@nuxtjs/tailwindcss": "^6.14.0"
-  }
+    "@nuxt/eslint": "^1.15.2",
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/amqplib": "^0.10.8",
+    "eslint": "^10.2.0",
+    "typescript": "^6.0.2",
+    "vue-tsc": "^3.2.6"
+  },
+  "packageManager": "pnpm@10.33.0"
 }

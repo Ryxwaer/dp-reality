@@ -1,13 +1,40 @@
+<script setup lang="ts">
+const colorMode = useColorMode()
+
+const color = computed(() => colorMode.value === 'dark' ? '#1b1718' : 'white')
+
+useHead({
+  meta: [
+    { charset: 'utf-8' },
+    { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+    { key: 'theme-color', name: 'theme-color', content: color }
+  ],
+  link: [
+    { rel: 'icon', href: '/favicon.ico' }
+  ],
+  htmlAttrs: {
+    lang: 'en'
+  }
+})
+
+const title = 'dp-reality'
+const description = 'Track listings across real-estate portals and get notified about matches that fit your filters.'
+
+useSeoMeta({
+  title,
+  description,
+  ogTitle: title,
+  ogDescription: description,
+  twitterCard: 'summary_large_image'
+})
+</script>
+
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <nav class="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
-      <div class="w-7 h-7 bg-blue-600 rounded flex items-center justify-center">
-        <span class="text-white text-xs font-bold">dp</span>
-      </div>
-      <span class="text-lg font-semibold text-gray-900">dp-reality</span>
-    </nav>
-    <main class="container mx-auto px-6 py-8 max-w-5xl">
+  <UApp>
+    <NuxtLoadingIndicator />
+
+    <NuxtLayout>
       <NuxtPage />
-    </main>
-  </div>
+    </NuxtLayout>
+  </UApp>
 </template>

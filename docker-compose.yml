@@ -5,46 +5,17 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
     ports:
+      - "5672:5672"
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - dp-reality
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 15s
       timeout: 10s
       retries: 5
-
-  module-bazos:
-    build:
-      context: .
-      dockerfile: services/modules/bazos/Dockerfile
-    env_file: .env
-    environment:
-      SERVICE_NAME: module-bazos
-    restart: unless-stopped
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/modules/bazos/src
-          target: /app
-        - action: rebuild
-          path: ./services/modules/bazos/requirements.txt
-
-  module-sreality:
-    build:
-      context: .
-      dockerfile: services/modules/sreality/Dockerfile
-    env_file: .env
-    environment:
-      SERVICE_NAME: module-sreality
-    restart: unless-stopped
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/modules/sreality/src
-          target: /app
-        - action: rebuild
-          path: ./services/modules/sreality/requirements.txt
 
   job-bazos:
     build:
@@ -58,6 +29,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - dp-reality
     restart: unless-stopped
     develop:
       watch:
@@ -78,6 +51,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - dp-reality
     restart: unless-stopped
     develop:
       watch:
@@ -97,14 +72,13 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - dp-reality
     restart: unless-stopped
     develop:
       watch:
-        - action: sync+restart
-          path: ./services/notification/src
-          target: /app
         - action: rebuild
-          path: ./services/notification/requirements.txt
+          path: ./services/notification
 
   frontend:
     build:
@@ -113,8 +87,16 @@ services:
     env_file: .env
     environment:
       NUXT_MONGODB_URI: ${MONGODB_URI}
+      NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD}
+      NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "3000:3000"
+    networks:
+      - dp-reality
     restart: unless-stopped
     develop:
       watch:
@@ -130,3 +112,8 @@ services:
 
 volumes:
   rabbitmq_data:
+
+networks:
+  dp-reality:
+    name: dp-reality
+    driver: bridge

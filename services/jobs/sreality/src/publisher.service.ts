@@ -37,7 +37,7 @@ export class PublisherService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Connected to RabbitMQ');
   }
 
-  async publishCompletion(newCount: number): Promise<void> {
+  async publishCompletion(runId: string): Promise<void> {
     if (!this.channel) {
       await this.connect();
     }
@@ -46,13 +46,13 @@ export class PublisherService implements OnModuleInit, OnModuleDestroy {
       throw new Error('RabbitMQ channel unavailable after reconnect attempt');
     }
     const payload = JSON.stringify({
+      run_id: runId,
       source: 'sreality',
-      new_count: newCount,
-      timestamp: new Date().toISOString(),
+      collection: 'sreality',
     });
     channel.publish(EXCHANGE, '', Buffer.from(payload), {
       persistent: true,
     });
-    this.logger.debug(`Published scrape.completed: ${newCount} new`);
+    this.logger.debug(`Published scrape.completed run=${runId}`);
   }
 }

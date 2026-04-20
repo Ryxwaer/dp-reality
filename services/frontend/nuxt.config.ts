@@ -1,9 +1,41 @@
+// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  compatibilityDate: '2024-11-01',
+  modules: [
+    '@nuxt/eslint',
+    '@nuxt/ui',
+    '@vueuse/nuxt',
+    'nuxt-auth-utils'
+  ],
 
-  modules: ['@nuxtjs/tailwindcss'],
+  devtools: {
+    enabled: true
+  },
+
+  css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
-    mongodbUri: process.env.MONGODB_URI ?? '',
+    mongodbUri: '',
+    rabbitmqUrl: '',
+    unsubscribeSecret: '',
+    public: {
+      appName: 'dp-reality'
+    }
   },
+
+  routeRules: {
+    '/api/**': {
+      cors: true
+    }
+  },
+
+  compatibilityDate: '2024-07-11',
+
+  eslint: {
+    config: {
+      stylistic: {
+        commaDangle: 'never',
+        braceStyle: '1tbs'
+      }
+    }
+  }
 })

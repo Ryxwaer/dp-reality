@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime
 
 import aio_pika
@@ -29,13 +30,14 @@ async def scrape_cycle(
     global _consecutive_failures
     logger.info("Starting scrape cycle")
     try:
+        run_id = str(uuid.uuid4())
         listings = await fetch_listings(settings.scrape_pages)
-        logger.info("Fetched %d listings from Bazos", len(listings))
+        logger.info("Fetched %d listings from Bazos (run %s)", len(listings), run_id)
 
-        new_count = await upsert_listings(db, listings)
+        new_count = await upsert_listings(db, listings, run_id)
 
         if new_count > 0:
-            await publish_completion(rabbitmq, new_count)
+            await publish_completion(rabbitmq, run_id)
 
         _consecutive_failures = 0
     except Exception:

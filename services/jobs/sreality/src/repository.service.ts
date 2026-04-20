@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { Listing, type ListingDocument } from './listing.schema.js';
 
-type ListingData = Omit<Listing, 'first_seen' | 'last_seen'>;
+type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
 
 @Injectable()
 export class RepositoryService {
@@ -13,15 +13,18 @@ export class RepositoryService {
     @InjectModel(Listing.name) private readonly model: Model<ListingDocument>,
   ) {}
 
-  async upsertListings(listings: ListingData[]): Promise<number> {
+  // `runId` is stamped via $setOnInsert so truly new listings carry this run's
+  // id, while repeat sightings retain the run_id from their first discovery.
+  // The notification service keys off `run_id` to notify only on fresh inserts.
+  async upsertListings(listings: ListingData[], runId: string): Promise<number> {
     if (!listings.length) return 0;
 
     const now = new Date();
     const ops = listings.map((l) => ({
       updateOne: {
-        filter: { source: l.source, source_id: l.source_id },
+        filter: { source_id: l.source_id },
         update: {
-          $setOnInsert: { first_seen: now },
+          $setOnInsert: { first_seen: now, run_id: runId },
           $set: { ...l, last_seen: now },
         },
         upsert: true,
@@ -30,7 +33,7 @@ export class RepositoryService {
 
     const result = await this.model.bulkWrite(ops, { ordered: false });
     this.logger.log(
-      `Upserted ${listings.length} listings — ${result.upsertedCount} new`,
+      `Upserted ${listings.length} listings — ${result.upsertedCount} new (run ${runId})`,
     );
     return result.upsertedCount;
   }
