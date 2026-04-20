@@ -2,14 +2,6 @@ import { ObjectId } from 'mongodb'
 import { requireUserId } from '~~/server/utils/auth'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
 
-/**
- * Serves a module's JavaScript bundle. The code is stored in MongoDB and
- * returned verbatim with a JS content type so the browser can consume it via
- * a dynamic `import()` against a Blob URL.
- *
- * ETag uses the document's `updated_at` so repeated opens of the same module
- * can be cached in-memory by the browser even with must-revalidate.
- */
 export default defineEventHandler(async (event) => {
   await requireUserId(event)
   const rawId = getRouterParam(event, 'id')

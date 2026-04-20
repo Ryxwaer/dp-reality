@@ -4,24 +4,6 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import type { ModuleDoc, NotificationField } from '~~/shared/types'
 import { apply as applyNotification } from '~~/shared/notify'
 
-/**
- * Shared module form used by both `/modules/upload` and
- * `/modules/[id]/edit`. Keeps layout, validation, preview, and
- * sample-fetching in one place — the page wrappers decide what to
- * do with the assembled payload on submit.
- *
- * Props:
- *  - `initial`: when set, fields hydrate from an existing module and
- *    the form runs in "edit" mode. `null` / `undefined` = create mode.
- *  - `submitLabel`: button text, default "Upload".
- *  - `lockIdentity`: when true, `collection` / `source` become read-only
- *    (we lock them on edit because they affect downstream queries).
- *  - `lockCode`: when true, the bundle upload is hidden entirely
- *    (system modules — their .mjs is repo-seeded).
- *  - `busy`: parent-driven loading state (mirrors submit button).
- *
- * Emits `submit` with a normalised payload the parent POSTs/PATCHes.
- */
 interface ModuleFormPayload {
   name: string
   collection: string
@@ -112,10 +94,6 @@ const schema = z.object({
   notification_subject: z.string().max(512),
   notification_title: z.string().min(1, 'Title is required').max(512),
   notification_url: z.string().min(1, 'URL is required').max(512),
-  // In edit mode, the existing bundle stays untouched when this is
-  // empty — the parent will send a PATCH without `code`. In upload
-  // mode, the button below is `:disabled="!state.code"` so we never
-  // reach the server with an empty bundle.
   code: z.string().optional()
 })
 type Schema = z.output<typeof schema>
@@ -180,14 +158,8 @@ const sdkDocs = useSdkDocs()
 
 const isEdit = computed(() => props.initial != null)
 
-// Docs strings with Vue-interpolation syntax in them can't live inline
-// in the template — the parser tries to evaluate the nested mustaches.
-// Keep them in the script and splice them in as plain data.
+// Vue's mustache parser can't tolerate nested {{ }} inline in templates.
 const EX_TEMPLATE = '{{ price }} CZK {{ price_type }}'
-
-// ---------------------------------------------------------------------------
-// Sample-fetch + autocomplete
-// ---------------------------------------------------------------------------
 
 interface SampleResponse {
   found: boolean
@@ -227,9 +199,6 @@ async function fetchSample() {
   }
 }
 
-// Auto-fetch a sample in edit mode so the preview is useful the
-// moment the page loads, without the user having to click "Fetch
-// sample". Upload mode keeps it manual (no collection yet).
 onMounted(() => {
   if (isEdit.value && state.collection) {
     void fetchSample()
@@ -249,10 +218,6 @@ const previewRow = computed(() => {
     : { title: '<example title>', url: 'https://example.com/123', city: 'Brno', price: 4200000, price_type: 'sale' }
   return applyNotification(previewSpec.value, doc)
 })
-
-// ---------------------------------------------------------------------------
-// File upload
-// ---------------------------------------------------------------------------
 
 async function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
@@ -305,9 +270,6 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
   })
 }
 
-// Submit button is disabled only when a new module is being uploaded
-// without a bundle. In edit mode, no file selection means "keep the
-// existing bundle" which is a perfectly valid save.
 const submitDisabled = computed(() => !isEdit.value && !state.code)
 </script>
 

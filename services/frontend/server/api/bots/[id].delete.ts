@@ -1,12 +1,7 @@
 import { requireUser } from '~~/server/utils/auth'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
 
-/**
- * Soft-delete: the bot subdocument stays in `users.bots[]` so inbox
- * rows referencing it by `bot_id` keep resolving to a name, and
- * historical data isn't silently rewritten. The bots list, get-by-id,
- * and the matcher all treat `status === 'deleted'` as absent.
- */
+// Soft-delete: bot stays in users.bots[] so past notifications resolve.
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const id = getRouterParam(event, 'id')

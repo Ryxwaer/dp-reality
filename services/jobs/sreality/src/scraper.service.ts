@@ -6,12 +6,6 @@ import { RepositoryService } from './repository.service.js';
 import { PublisherService } from './publisher.service.js';
 import type { Listing } from './listing.schema.js';
 
-/**
- * Subset of the sreality public estates API we consume. Only the
- * fields we actually persist or derive from are listed — keeping
- * this narrow catches shape drift with a TS error instead of silent
- * `undefined` in the database.
- */
 interface SrealityEstate {
   hash_id: number;
   name: string;
@@ -27,12 +21,7 @@ interface SrealityEstate {
   labelsAll?: string[][];
 }
 
-/**
- * Canonical slug tables used only to reconstruct human-friendly
- * detail URLs. `category_sub_cb` is persisted verbatim on the
- * listing; the slug is never persisted, so module authors can
- * safely key on the integer code instead.
- */
+// Used only to reconstruct human-friendly detail URLs.
 const APARTMENT_SLUGS: Record<number, string> = {
   2: '1+kk',
   3: '1+1',
@@ -59,11 +48,6 @@ const HOUSE_SLUGS: Record<number, string> = {
   54: 'vicegeneracni-dum',
 };
 
-/**
- * Persisted shape. Intentionally identical to `Listing` minus the
- * `first_seen` / `last_seen` / `run_id` stamp fields (those live in
- * the repository's upsert logic).
- */
 type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
 
 const CATEGORIES = [
@@ -188,13 +172,10 @@ export class ScraperService implements OnModuleInit {
       localityParts[localityParts.length - 1].trim().split(' - ')[0].trim() ||
       undefined;
 
-    // `labelsAll[0]` = structural tags (ownership, material, state,
-    // furnishing). `labelsAll[1]` is neighbourhood POIs which we drop.
+    // labelsAll[0] = structural tags; labelsAll[1] = POIs (dropped).
     const labels = estate.labelsAll?.[0] ?? [];
 
-    // GeoJSON Point: coordinates in [lon, lat] order (Mongo's
-    // convention, matches `$centerSphere`). Drop when sreality
-    // reports 0/0 which means "unknown".
+    // GeoJSON Point in [lon, lat] order for Mongo $centerSphere; skip 0/0.
     const gps =
       estate.gps && (estate.gps.lat !== 0 || estate.gps.lon !== 0)
         ? {

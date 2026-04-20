@@ -1,7 +1,5 @@
 // Package unsubscribe implements the HMAC-signed token scheme shared
-// with the frontend. The TypeScript companion lives in
-// services/frontend/server/utils/unsubscribe-token.ts — keep the two
-// wire formats in lockstep.
+// with services/frontend/server/utils/unsubscribe-token.ts.
 package unsubscribe
 
 import (
@@ -14,21 +12,14 @@ import (
 	"time"
 )
 
-// Payload mirrors the TS `UnsubscribePayload`.
-//
-// uid: Mongo ObjectID hex for the user.
-// src: source key (e.g. "bazos", "sreality", or a collection name).
-// exp: unix seconds expiry.
 type Payload struct {
 	UID string `json:"uid"`
 	Src string `json:"src"`
 	Exp int64  `json:"exp"`
 }
 
-// DefaultTTL is the validity window when callers don't pick one.
 const DefaultTTL = 30 * 24 * time.Hour
 
-// Sign returns `base64url(json(payload)).base64url(hmac_sha256)`.
 func Sign(secret string, p Payload) (string, error) {
 	if secret == "" {
 		return "", errors.New("UNSUBSCRIBE_SECRET is not configured")
@@ -47,9 +38,6 @@ func Sign(secret string, p Payload) (string, error) {
 	return bodyB64 + "." + sigB64, nil
 }
 
-// Verify returns the decoded payload if the signature matches and the
-// token hasn't expired. Unused here (the frontend does the verification
-// on incoming requests), but symmetric for tests and future tooling.
 func Verify(secret, token string) (Payload, error) {
 	if secret == "" {
 		return Payload{}, errors.New("UNSUBSCRIBE_SECRET is not configured")

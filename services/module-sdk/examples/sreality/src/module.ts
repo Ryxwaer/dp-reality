@@ -1,31 +1,4 @@
-import type { ModuleFactory, ModuleMatcher } from '../../../template/host-types'
-
-/**
- * Sreality module. Structured configuration — each filter is its own
- * field. The user can fill the form by hand, or paste a sreality.cz
- * search URL and click "Prefill from URL" to replace every field
- * (one-shot convert). The URL itself is **not** persisted, only the
- * resulting fields.
- *
- * Structured fields → matcher output:
- *
- *   property_type (apartment|house|land|commercial)
- *                                 → property_type eq, category_main_cb eq
- *   listing_type  (sale|rent)     → price_type eq, category_type_cb eq
- *   disposition   (e.g. '1+kk')   → category_sub_cb eq  (via lookup table)
- *   region_text                   → locality contains (ci)     [*]
- *   geo { center, radius_km }     → gps geo_within             [*]
- *   min_price / max_price         → price gte / price lte
- *
- *   [*] geo wins if both are set (URL-sourced region-id + vzdalenost
- *       prefill sets geo and clears region_text). Manual input can only
- *       produce region_text, since we can't turn a free-text name into
- *       a safe centroid + radius without user intent.
- *
- * Sreality publishes GPS on every listing and the scraper stores it as
- * a GeoJSON Point with a 2dsphere index on `gps`, so `geo_within`
- * compiles to a true `$geoWithin/$centerSphere` query.
- */
+import type { ModuleFactory, ModuleMatcher, ModuleManifest } from '../../../template/host-types'
 
 type PropertyType = '' | 'apartment' | 'house' | 'land' | 'commercial'
 type ListingType = '' | 'sale' | 'rent'
@@ -81,10 +54,7 @@ const HOUSE_SUBCB: Record<string, number> = {
 const APARTMENT_DISPOSITIONS = Object.keys(APARTMENT_SUBCB)
 const HOUSE_DISPOSITIONS = Object.keys(HOUSE_SUBCB)
 
-// region-id → [lon, lat]. Only the biggest Czech cities — enough to
-// answer "Brno + 10 km" for the common flow. Unknown region-ids fall
-// back to a text match on `region_text` so some locality filter still
-// applies. Verified against Wikipedia.
+// region-id → [lon, lat], covering the biggest Czech cities.
 const REGION_CENTROIDS: Record<number, [number, number]> = {
   5740: [16.6068, 49.1951],   // Brno
   3468: [14.4378, 50.0755],   // Praha
@@ -192,8 +162,6 @@ function parseSrealityUrl(raw: string): ParseResult {
 
   if (haveCentroid && haveRadius) {
     out.patch.geo = { center: REGION_CENTROIDS[regionId], radius_km: vzdalenost }
-    // When geo wins, explicitly null out region_text so replace-all
-    // doesn't leave a stale text filter next to the geo one.
     out.patch.region_text = ''
     out.summary.push({
       label: 'Location',
@@ -268,6 +236,90 @@ function isValidGeo(g: unknown): g is GeoBounds {
     && typeof c[0] === 'number' && Number.isFinite(c[0])
     && typeof c[1] === 'number' && Number.isFinite(c[1])
     && typeof r === 'number' && Number.isFinite(r) && r > 0 && r <= 500
+}
+
+export const manifest: ModuleManifest = {
+  name: 'Sreality',
+  collection: 'sreality',
+  source: 'sreality',
+  description: `# Sreality module
+
+Configure a search over **sreality.cz** — the bot will email you
+whenever a new listing matches the filters you pick.
+
+## How it works
+
+Every filter axis is its own form field (type, transaction, disposition,
+region, price). You can also paste a sreality.cz/hledani URL and click
+**Prefill from URL** — the module parses the URL and replaces every
+field from it (one-shot convert). The URL itself is not saved.
+
+URL parsing covers:
+
+| Source                                | Populates                                 |
+|---------------------------------------|-------------------------------------------|
+| \`/hledani/<byty|domy|pozemky|…>\`   | property type                             |
+| \`/<prodej|pronajem>\`                | transaction                               |
+| \`/<disposition>\` path segment       | disposition (e.g. \`1+kk\`)                |
+| \`cena-od\` / \`cena-do\`             | min / max price                           |
+| \`region\`                            | free-text region (locality contains)      |
+| \`region-id\` + \`vzdalenost\`        | true radius search via GeoJSON \`gps\`     |
+
+Radius search only compiles to \`$geoWithin\` when the URL includes a
+\`region-id\` the module has a centroid for (~12 biggest Czech cities).
+Manual text input always produces a \`locality contains\` match.
+
+## Data shape
+
+Each match in the \`sreality\` collection stores:
+- \`title\`, \`price\`, \`price_type\`, \`disposition\`
+- \`locality\`, \`city\`
+- \`gps\` (GeoJSON Point, \`[lon, lat]\`)
+- \`category_main_cb\`, \`category_sub_cb\`, \`category_type_cb\`
+- \`labels\` — structural tags (ownership, material, state)
+- \`url\`
+`,
+  configSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      property_type: { type: 'string', enum: ['', 'apartment', 'house', 'land', 'commercial'] },
+      listing_type: { type: 'string', enum: ['', 'sale', 'rent'] },
+      disposition: { type: 'string', maxLength: 16 },
+      region_text: { type: 'string', maxLength: 128 },
+      min_price: { type: ['number', 'null'], minimum: 0 },
+      max_price: { type: ['number', 'null'], minimum: 0 },
+      geo: {
+        oneOf: [
+          { type: 'null' },
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['center', 'radius_km'],
+            properties: {
+              center: {
+                type: 'array',
+                minItems: 2,
+                maxItems: 2,
+                items: { type: 'number' }
+              },
+              radius_km: { type: 'number', minimum: 0, maximum: 500 }
+            }
+          }
+        ]
+      }
+    }
+  },
+  notification: {
+    subject: 'Sreality: {{count}} new listings',
+    title: 'title',
+    url: 'url',
+    fields: [
+      { label: 'Price', value: '{{ price }} CZK ({{ price_type }})' },
+      { label: 'Location', value: '{{ locality }}' },
+      { label: 'Layout', value: '{{ disposition }}' }
+    ]
+  }
 }
 
 function normalizeConfig(raw: Partial<SrealityConfig>): SrealityConfig {

@@ -14,12 +14,7 @@ interface ModuleListItem {
   created_at: string
   updated_at: string
   is_own: boolean
-  // `system: true` marks repo-seeded modules (Bazos / Sreality). Keep
-  // surfaced so the UI can badge them and lock their bundle upload.
   system: boolean
-  // `editable: true` when the current user can PATCH the module.
-  // Mirrors the server-side auth rule so we can render the right
-  // dropdown actions without a round-trip.
   editable: boolean
 }
 
@@ -80,9 +75,6 @@ export default defineEventHandler(async (event): Promise<ModuleListItem[]> => {
       updated_at: d.updated_at.toISOString(),
       is_own: isOwn,
       system: d.system === true,
-      // While single-tenant dev, any signed-in user may edit system
-      // modules; owners may always edit their own. The PATCH handler
-      // re-enforces this so a stale cache can't bypass the check.
       editable: isOwn || d.system === true
     }
   })

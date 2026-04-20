@@ -29,13 +29,10 @@ export default defineEventHandler(async (event): Promise<ModuleDoc> => {
     throw createError({ statusCode: 404, statusMessage: 'Module not found' })
   }
 
-  // Reference userId so linters are happy even though we do not gate reads.
   void userId
 
   const configSchema = (doc.configSchema as Record<string, unknown> | undefined)
     ?? EMPTY_CONFIG_SCHEMA
-  // Older seed documents predate the notification spec; fall back so
-  // existing modules still load in the editor and aren't silently 500.
   const notification = (doc.notification as NotificationSpec | undefined) ?? EMPTY_NOTIFICATION
 
   return {

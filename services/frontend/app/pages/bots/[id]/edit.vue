@@ -8,12 +8,7 @@ import {
 
 useHead({ title: 'Edit bot' })
 
-// SSR can't render the dynamically-imported module bundle anyway
-// (it goes through URL.createObjectURL + import()), and fetching the
-// bot + module from the server path would require cookie forwarding
-// via `useRequestFetch()`. Both problems go away by only fetching on
-// the client — the auth cookie is native there, and we don't lose
-// anything in the SSR HTML beyond a one-frame "Loading module…".
+// Module bundles load via URL.createObjectURL + import(), which requires the client.
 definePageMeta({ ssr: false })
 
 const route = useRoute()
@@ -31,8 +26,6 @@ const moduleMissing = ref(false)
 const { component, loading, error, load } = useModuleLoader()
 const bootError = ref<string | null>(null)
 
-// Host-owned email toggle (same rationale as the new-bot page). Seeded
-// from the loaded bot so the switch reflects current state.
 const emailNotifications = ref(true)
 
 async function saveBot(payload: SaveBotPayload) {
@@ -69,19 +62,12 @@ async function boot(b: BotConfig) {
   await load(b.module_id, host)
 }
 
-// `useFetch` is lazy, so `bot.value` is null on mount and `boot()`
-// would otherwise never run (leaving `useModuleLoader`'s `loading`
-// ref stuck at true — that's what caused the "edit page hangs forever"
-// symptom). The watcher kicks boot off exactly once when the fetch
-// resolves.
+// Lazy useFetch resolves after mount; this watcher kicks boot once.
 const booted = ref(false)
 watch(bot, (b) => {
   if (!b || booted.value) return
   booted.value = true
   boot(b).catch((err) => {
-    // Surface anything unexpected (401 on module fetch, network glitch,
-    // evaluator crash) through the visible error slot rather than
-    // letting it bubble up as an unhandledRejection.
     const msg = err instanceof Error
       ? err.message
       : typeof err === 'object' && err && 'statusMessage' in err

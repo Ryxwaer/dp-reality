@@ -1,29 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-/**
- * Unsubscribe-token format, identical to the Go implementation in
- * services/notification/internal/unsubscribe:
- *
- *     <base64url(payload_json)>.<base64url(hmac_sha256)>
- *
- * Payload shape: { uid: string, src: string, exp: unix_seconds }
- *
- * We hand-roll a tiny signed-token scheme instead of pulling in a JWT
- * library because the surface is small (three fields, no nested claims)
- * and the secret is co-owned with a non-Node service, so keeping the
- * format trivially reimplementable is worth more than JWT niceties.
- */
-
+// Token format mirrors services/notification/internal/unsubscribe:
+//   <base64url(payload_json)>.<base64url(hmac_sha256)>
 export interface UnsubscribePayload {
-  /** User id (Mongo ObjectID hex). */
   uid: string
-  /** Source key the email was sent for (e.g. `bazos`, `sreality`, or a collection name). */
   src: string
-  /** Expiry, unix seconds. */
   exp: number
 }
 
-/** Default validity window if the caller doesn't override. 30 days. */
 const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60
 
 function b64url(buf: Buffer | string): string {

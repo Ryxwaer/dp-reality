@@ -4,12 +4,6 @@ import { shapeBot, type RawBot } from '~~/server/utils/bot-shape'
 import { verifyUnsubscribeToken } from '~~/server/utils/unsubscribe-token'
 import { sourceLabel } from '~~/shared/source'
 
-/**
- * Per-bot summary shown on /unsubscribe/:token. We deliberately expose
- * only public-safe fields (name, source label) — the token holder
- * already proves ownership of the account, but we still don't leak the
- * full `config` blob here since it can contain search preferences.
- */
 export interface UnsubscribeBot {
   id: string
   name: string
@@ -25,9 +19,7 @@ export interface UnsubscribeSummary {
   email: string
   source_key: string
   source_label: string
-  /** Bots in the email's own source (preselected for email-off). */
   same_source: UnsubscribeBot[]
-  /** Bots from other sources, grouped by source_key for collapsed rendering. */
   other_sources: Array<{
     source_key: string
     source_label: string
@@ -74,8 +66,6 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
   const rawBots = ((user.bots ?? []) as RawBot[]).map(shapeBot)
     .filter(b => b.status !== 'deleted') as Array<ReturnType<typeof shapeBot>>
 
-  // Batch-load referenced modules once just to pick up display names
-  // — the grouping key comes from `bot.source` directly now.
   const moduleIds = Array.from(new Set(rawBots.map(b => b.module_id).filter(v => ObjectId.isValid(v))))
   const moduleDocs = moduleIds.length === 0
     ? []
@@ -91,9 +81,6 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
 
   const summarise = (bot: ReturnType<typeof shapeBot>): UnsubscribeBot => {
     const mod = moduleByID.get(bot.module_id)
-    // Prefer the snapshot on the bot itself — it's immutable for the
-    // bot's life. Fall back to the module only if the bot predates the
-    // snapshot (older rows before the source/collection rollout).
     const key = bot.source || mod?.source || mod?.collection || 'unknown'
     return {
       id: bot.id,

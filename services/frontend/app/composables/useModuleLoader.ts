@@ -16,13 +16,6 @@ export interface ExistingBotInput {
   active: boolean
 }
 
-/**
- * Payload the module bundle hands back to the host when the user
- * saves. The bundle is the sole producer of `matcher`: it compiles
- * the user's `config` into a concrete {@link ModuleMatcher} (values
- * inlined, no `config.*` indirection) which the server validates
- * against MATCHER_SCHEMA and snapshots onto the bot.
- */
 export interface SaveBotPayload {
   name: string
   config: Record<string, unknown>
@@ -44,13 +37,9 @@ export interface ModuleHost {
 
 export type ModuleFactory = (host: ModuleHost) => Component
 
-/**
- * Downloads a module's compiled JS bundle from the BFF, turns it into a Blob
- * URL, dynamic-imports it and calls its default-exported factory with the
- * provided host. Vue primitives are handed to the module through the host so
- * the module bundle itself does not need to (and MUST NOT) import Vue — this
- * keeps a single Vue instance in the page.
- */
+// Fetch the bundle over HTTP, materialize it as a blob URL and
+// dynamic-import it. Vue primitives flow through the host so the
+// module must not import Vue directly (keeps a single Vue instance).
 export async function loadModuleComponent(
   moduleId: string,
   host: ModuleHost
@@ -72,10 +61,6 @@ export async function loadModuleComponent(
   }
 }
 
-/**
- * Thin Vue-style wrapper around [[loadModuleComponent]] that exposes the
- * loaded component plus loading/error state.
- */
 export function useModuleLoader() {
   const component = shallowRef<Component | null>(null)
   const loading = ref(true)

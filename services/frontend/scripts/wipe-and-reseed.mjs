@@ -1,37 +1,8 @@
 #!/usr/bin/env node
-/**
- * Dev-only helper that wipes the collections touched by the bot-owned
- * matcher rework and lets the scraper + seeder rebuild everything
- * from scratch on the next run.
- *
- * Affected collections:
- *   - `modules`        — system seeds are re-inserted automatically the
- *                        next time the frontend lists modules (via
- *                        `ensureSeededModules()`). The seeds now carry
- *                        a `configSchema` instead of a `matcher`.
- *   - `notifications`  — cleared in full. No migration of the old
- *                        listing-shaped rows; the new code assumes the
- *                        resolved-field shape.
- *   - `bazos`,
- *     `sreality`       — per-source listing collections, cleared in
- *                        full so the next scraper tick stamps every
- *                        row with a run_id.
- *   - `reality`        — the legacy pre-per-source collection. Dropped
- *                        if present; harmless if already gone.
- *   - `users`          — every user's `bots` array is emptied (not the
- *                        user itself). Pre-rework bot entries lack the
- *                        `matcher` + `notification` snapshots the Go
- *                        notifier now reads from the bot, so they have
- *                        to be recreated — the user opens their module
- *                        again and re-saves.
- *
- * Intended usage (dev machines only):
- *
- *     NUXT_MONGODB_URI=mongodb://... node scripts/wipe-and-reseed.mjs
- *
- * The script bails out if NODE_ENV === 'production' unless
- * FORCE_WIPE=1 is set.
- */
+// Dev helper: drop every per-module listing collection plus modules,
+// notifications, and the legacy `reality`, then empty users.bots[].
+// The next frontend request re-seeds built-ins; the next scraper tick
+// re-populates listings. Refuses to run in production without FORCE_WIPE=1.
 import process from 'node:process'
 import { MongoClient } from 'mongodb'
 
@@ -46,7 +17,7 @@ if (process.env.NODE_ENV === 'production' && process.env.FORCE_WIPE !== '1') {
   process.exit(1)
 }
 
-const COLLECTIONS_TO_DROP = ['modules', 'notifications', 'bazos', 'sreality', 'reality']
+const ALWAYS_DROP = ['modules', 'notifications', 'reality']
 
 async function main() {
   const client = new MongoClient(URI)
@@ -55,7 +26,10 @@ async function main() {
 
   console.log(`[wipe-and-reseed] using db ${db.databaseName}`)
 
-  for (const name of COLLECTIONS_TO_DROP) {
+  const moduleCollections = await db.collection('modules').distinct('collection')
+  const toDrop = [...new Set([...ALWAYS_DROP, ...moduleCollections.filter(c => typeof c === 'string' && c)])]
+
+  for (const name of toDrop) {
     try {
       const existed = await db.listCollections({ name }).hasNext()
       if (!existed) {
@@ -79,7 +53,7 @@ async function main() {
   }
 
   await client.close()
-  console.log('[wipe-and-reseed] done. Next frontend request will re-seed built-in modules; next scraper run will re-populate `bazos` / `sreality`.')
+  console.log('[wipe-and-reseed] done.')
 }
 
 main().catch((err) => {

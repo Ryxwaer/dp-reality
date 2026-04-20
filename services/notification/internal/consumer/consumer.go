@@ -26,26 +26,9 @@ const (
 	botCreatedExchange = "bot.created"
 	botCreatedQueue    = "notification.bot.created"
 
-	// Window used for the initial digest sent when a user creates a bot.
 	initialDigestWindow = 24 * time.Hour
 )
 
-// processScrapeEvent handles a scrape.completed message. Since the
-// bot-owned matcher rework, there is no module-level join in this hot
-// path: every active bot carries its own compiled matcher and
-// notification spec (snapshotted at save time). The flow is therefore:
-//
-//  1. Load all users with at least one active bot scoped to
-//     (source, collection).
-//  2. For every such bot, push the matcher down to Mongo —
-//     `<collection>.find({run_id: E.RunID} AND Compile(bot.Matcher))` —
-//     so the DB returns exactly the rows this bot cares about.
-//  3. Apply `bot.Notification` to each matched listing, persist the
-//     resolved rows to `notifications`, and (if any bot on the user
-//     wanted email) emit one digest per (user, source).
-//
-// There's no per-user dedup read against `notifications` —
-// $setOnInsert(run_id) upstream is the authoritative cursor.
 func processScrapeEvent(ctx context.Context, event models.ScrapeEvent, repo *repository.Repository, cfg config.Config) error {
 	slog.Info("received scrape.completed",
 		"run_id", event.RunID, "source", event.Source, "collection", event.Collection)
@@ -76,16 +59,6 @@ func processScrapeEvent(ctx context.Context, event models.ScrapeEvent, repo *rep
 	return nil
 }
 
-// processUserForRun runs one Mongo query per active bot (scoped to the
-// event) and aggregates per-source digests. Isolated so one user's
-// failure doesn't poison the rest of the batch.
-//
-// One query per bot is simpler than building a single `$or` union and
-// scales fine at ~10k users / ~100 modules because every query is
-// anchored by the compound `run_id` + matcher fields index. If we ever
-// need to reduce the query count, we can batch identical compiled
-// matchers (same module, same config) into a single find() without
-// changing the matcher shape.
 func processUserForRun(
 	ctx context.Context,
 	user models.User,
@@ -153,9 +126,6 @@ func processUserForRun(
 		return fmt.Errorf("persist notifications: %w", err)
 	}
 	if len(inserted) == 0 {
-		// A redelivered scrape event: everything we tried to insert
-		// was already there from a previous consume. Emailing again
-		// would be spam, so skip.
 		return nil
 	}
 
@@ -173,12 +143,6 @@ func processUserForRun(
 	return nil
 }
 
-// processBotCreatedEvent handles bot.created: sends a one-off 24h
-// digest for the newly created bot (or a short welcome email if
-// nothing matched in the window) and records inbox rows for the
-// matches. Unlike the scrape path, this ignores `run_id` and scans
-// the whole 24h window — a brand-new bot should see every recent
-// listing that fits its filter, including ones from earlier runs.
 func processBotCreatedEvent(ctx context.Context, event models.BotCreatedEvent, repo *repository.Repository, cfg config.Config) error {
 	slog.Info("received bot.created", "user_id", event.UserID, "bot_id", event.BotID)
 
@@ -232,8 +196,6 @@ func processBotCreatedEvent(ctx context.Context, event models.BotCreatedEvent, r
 		inboxRows = append(inboxRows, models.NotificationFromResolved(user.ID, bot.ID, l, l.RunID, resolved, now))
 	}
 
-	// Send the digest even with zero matches — that's the "bot is
-	// active, nothing yet" confirmation email the user expects.
 	if bot.EmailNotifications {
 		if err := emailer.SendInitialDigest(cfg, *user, *bot, bot.Source, matchedRows); err != nil {
 			return fmt.Errorf("initial digest for %s: %w", user.Email, err)
@@ -249,8 +211,6 @@ func processBotCreatedEvent(ctx context.Context, event models.BotCreatedEvent, r
 	return nil
 }
 
-// subscribe declares a durable fanout exchange + queue, binds them, and
-// returns the delivery channel. Used identically by both consumer types.
 func subscribe(ch *amqp.Channel, exchange, queue string) (<-chan amqp.Delivery, error) {
 	if err := ch.ExchangeDeclare(exchange, "fanout", true, false, false, false, nil); err != nil {
 		return nil, fmt.Errorf("declare exchange %q: %w", exchange, err)
@@ -272,8 +232,6 @@ func subscribe(ch *amqp.Channel, exchange, queue string) (<-chan amqp.Delivery, 
 	return deliveries, nil
 }
 
-// Start runs both consumers (scrape.completed + bot.created) in parallel
-// and returns when ctx is cancelled or one of them fails fatally.
 func Start(ctx context.Context, conn *amqp.Connection, repo *repository.Repository, cfg config.Config) error {
 	ch, err := conn.Channel()
 	if err != nil {
@@ -321,9 +279,6 @@ func Start(ctx context.Context, conn *amqp.Connection, repo *repository.Reposito
 	}
 }
 
-// handleDelivery runs `fn` with a bounded timeout and Acks / Nacks
-// appropriately. A parse failure is Nacked without requeue (poison message),
-// a processing failure is Nacked with requeue so it will retry.
 func handleDelivery(ctx context.Context, msg amqp.Delivery, fn func(context.Context, []byte) error) {
 	processCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

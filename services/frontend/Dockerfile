@@ -2,11 +2,12 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY services/frontend/package*.json ./
-RUN npm ci
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
-COPY services/frontend/ .
-RUN npm run build
+COPY services/frontend/ ./
+RUN pnpm install --frozen-lockfile
+RUN pnpm build
 
 FROM node:22-alpine
 

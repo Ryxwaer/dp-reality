@@ -45,12 +45,6 @@ function editModule(id: string) {
   router.push(`/modules/${id}/edit`)
 }
 
-/**
- * Build the per-card dropdown menu. We want:
- *   - Edit shown whenever the server says `editable` (owner OR system)
- *   - Delete shown only when `is_own` (matches the DELETE handler's rule)
- * When neither applies, the dropdown itself is hidden below.
- */
 function dropdownItemsFor(m: ModuleListItem) {
   const items: Array<{ label: string, icon: string, color?: 'error', onSelect: () => void }> = []
   if (m.editable) {
@@ -62,11 +56,6 @@ function dropdownItemsFor(m: ModuleListItem) {
   return items
 }
 
-/**
- * Turn the markdown description into a short plain-text preview for the
- * module card — strip code fences, headings, emphasis and links, then take
- * the first paragraph and truncate.
- */
 function previewOf(markdown: string, max = 220): string {
   if (!markdown) return ''
   const withoutFences = markdown.replace(/```[\s\S]*?```/g, ' ')

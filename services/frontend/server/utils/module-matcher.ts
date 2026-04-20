@@ -2,34 +2,6 @@ import { z } from 'zod'
 import { FILTER_OPS } from '~~/shared/types'
 import type { ModuleMatcher, ModuleFilterSpec } from '~~/shared/types'
 
-/**
- * Strict validator for a compiled bot matcher. The module's `.mjs`
- * produces this at save time with user config already inlined — there
- * is no `config.*` interpolation at run time. The server validates
- * shape only (never semantics) because:
- *
- *   1. `op` is constrained to {@link FILTER_OPS} — excludes `$where`,
- *      `$expr`, and every operator that could evaluate code. Even
- *      `contains` is a bounded substring match emitted as a
- *      literal-escaped regex on the Go side, not an author-supplied
- *      pattern.
- *   2. `field` must match {@link FIELD_PATTERN}: a dotted path of
- *      identifiers at most 4 segments deep. `$`, `[`, `]`, spaces, and
- *      leading digits are rejected — so no `$where`, no array-index
- *      expressions, no operator confusion at the field slot.
- *   3. Literal `value` is constrained to primitives (strings <= 256 chars,
- *      numbers, booleans), arrays of primitives (<= 256 elements), or
- *      the `geo_within` struct `{ center: [lon, lat], radius_km }`.
- *   4. Max 32 filters per matcher — bumped from 16 because authors now
- *      emit concrete values (no templating loops).
- *
- * The set of legal field names is not known in advance; modules can
- * target any collection. Safety comes from the operator whitelist and
- * the field-name pattern, not a per-field allowlist.
- *
- * The Go notifier mirrors this schema in `specmatcher/`.
- */
-
 export const FIELD_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*){0,3}$/
 
 const PRIMITIVE = z.union([
@@ -38,12 +10,6 @@ const PRIMITIVE = z.union([
   z.boolean()
 ])
 
-/**
- * Geo-radius value. Shape mirrors {@link GeoWithinValue} and the
- * Mongo `$centerSphere: [[lon, lat], radians]` order. Radius is
- * clamped to a sane upper bound so a bug in the module can't
- * match the entire globe.
- */
 const GEO_VALUE = z.object({
   center: z.tuple([
     z.number().min(-180).max(180),
@@ -87,7 +53,6 @@ const FILTER = z.object({
     return
   }
 
-  // Every non-geo op expects a primitive or primitive-array value.
   const parsed = PRIMITIVE_VALUE.safeParse(f.value)
   if (!parsed.success) {
     ctx.addIssue({ code: 'custom', message: `op \`${f.op}\` expects a primitive or array-of-primitives value` })
@@ -98,10 +63,6 @@ const FILTER = z.object({
     if (typeof f.value !== 'string' || f.value.length === 0) {
       ctx.addIssue({ code: 'custom', message: '`contains` needs a non-empty string value' })
     }
-    // `ci` is accepted on `contains` and advisory — the Go compiler
-    // always emits the `i` regex flag regardless (no non-ci variant
-    // exposed on the wire, but allowing the flag keeps the client
-    // side uniform with in/nin/eq/ne).
     return
   }
 

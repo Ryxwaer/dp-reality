@@ -38,9 +38,6 @@ defineShortcuts({
   }
 })
 
-// The inbox summary only has room for one line under the title; pick
-// the first resolved field (module author ordered them) and show just
-// its value. Users see the full list in the detail pane.
 function summaryLine(n: NotificationDoc): string {
   const first = n.fields?.[0]
   return first ? first.value : ''

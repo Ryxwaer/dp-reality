@@ -8,19 +8,6 @@ import { validateConfigSchemaShape } from '~~/server/utils/config-schema'
 const MAX_CODE_BYTES = 1_048_576
 const MAX_DESC_BYTES = 32_768
 
-/**
- * Editable-after-upload fields only. The module's identity
- * (`collection`, `source`) and author-provenance (`uploaded_by`,
- * `system`, `system_author`, `created_at`) are intentionally absent
- * — letting a user rewrite those would let them impersonate another
- * scraper's collection or switch ownership on a module that already
- * has live bots snapshotted from its older shape. `name`,
- * `description`, `configSchema`, `notification`, and `code` are
- * where layout / docs / UI-schema experimentation lives.
- *
- * All fields are optional — the UI can PATCH a single field (e.g.
- * just `notification`) without round-tripping the rest of the doc.
- */
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().max(MAX_DESC_BYTES).optional(),
@@ -52,10 +39,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = await getDb()
-  // Pre-fetch so we can authorise before running the update and also
-  // return an informative 404 vs 403 (Mongo's updateOne would silently
-  // no-op on both). Projection drops `code` because it's large and we
-  // never need to read it here.
   const existing = await db.collection(COLLECTIONS.modules).findOne(
     { _id: moduleId },
     { projection: { code: 0 } }
@@ -64,10 +47,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Module not found' })
   }
 
-  // Auth rule: owner can always edit their upload. System modules
-  // (Bazos / Sreality and any future built-ins) are editable by any
-  // authenticated user while we're still in the single-tenant dev
-  // phase — tighten this before multi-tenant rollout.
   const isSystem = existing.system === true
   const isOwner = existing.uploaded_by instanceof ObjectId
     && existing.uploaded_by.equals(userId)
@@ -78,10 +57,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // System modules have their .mjs bundle and identity fields owned
-  // by the seeder — allowing a `code` PATCH would create confusing
-  // divergence on restart (the bundle would get overwritten by the
-  // next `ensureSeededModules`). Reject it up-front instead.
   if (isSystem && body.code !== undefined) {
     throw createError({
       statusCode: 400,
@@ -97,8 +72,6 @@ export default defineEventHandler(async (event) => {
   if (body.code !== undefined) update.code = body.code
 
   if (Object.keys(update).length === 1) {
-    // Only `updated_at` in the payload — don't bump the timestamp on
-    // a truly empty PATCH. Makes the "nothing to save" path obvious.
     return { id: moduleId.toHexString(), changed: false }
   }
 

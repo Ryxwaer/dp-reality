@@ -15,10 +15,6 @@ import (
 	"dp-reality/notification/internal/unsubscribe"
 )
 
-// renderRow turns one resolved listing snapshot into the HTML card
-// used in digest emails. `r.Title` and `r.Fields[*].Value` are already
-// HTML-escaped by the resolver; `r.URL` we still escape here so nobody
-// can smuggle attribute-breaking junk through it.
 func renderRow(r models.ResolvedRow) string {
 	var fields strings.Builder
 	for _, f := range r.Fields {
@@ -40,25 +36,13 @@ func renderRowsHTML(rows []models.ResolvedRow) string {
 	return sb.String()
 }
 
-// sourceDisplay turns an internal source key ("bazos", "sreality",
-// "dom_changes", ...) into a user-facing label for email subjects
-// and headings. Mirrors shared/source.ts#sourceLabel on the frontend.
 func sourceDisplay(src string) string {
-	switch src {
-	case "bazos":
-		return "Bazos"
-	case "sreality":
-		return "Sreality"
-	}
 	if src == "" {
 		return "Unknown"
 	}
 	return strings.ToUpper(src[:1]) + src[1:]
 }
 
-// buildUnsubscribeURL produces a per-source signed unsubscribe link.
-// Returns ("", nil) when no secret is configured — the emailer still
-// sends the email, just without a footer link.
 func buildUnsubscribeURL(cfg config.Config, user models.User, src string) (string, error) {
 	if cfg.UnsubscribeSecret == "" {
 		return "", nil
@@ -120,17 +104,6 @@ func sendMail(cfg config.Config, user models.User, subject, body string) error {
 	return nil
 }
 
-// SendDigest emits a digest for a single (user, source) pair. The
-// subject is resolved through notify.ResolveSubject so module authors
-// control the full subject line (including `{{count}}`) — we no longer
-// tack on a generic "— Source (N)" suffix here.
-//
-// When multiple bots on the same source contributed rows, the first
-// bot's subject template wins, since a user with many bots on one
-// source is an edge case and the subjects should read similarly.
-//
-// An empty template falls back to a generic localized subject so the
-// email still goes out when a module forgets to set one.
 func SendDigest(
 	cfg config.Config,
 	user models.User,
@@ -141,8 +114,6 @@ func SendDigest(
 	disp := sourceDisplay(src)
 	subject := notify.ResolveSubject(spec, len(rows))
 	if strings.TrimSpace(spec.Subject) == "" {
-		// ResolveSubject returns the literal "Notification" fallback
-		// in this case — swap in a friendlier default.
 		subject = fmt.Sprintf("New from %s — %d", disp, len(rows))
 	}
 	heading := fmt.Sprintf("New from %s (%d)", disp, len(rows))
@@ -158,12 +129,6 @@ func SendDigest(
 	return nil
 }
 
-// SendInitialDigest is the one-off "bot is now active, here's the
-// last 24h" email. An empty `rows` slice still triggers a
-// confirmation email so the user knows the bot is alive. The
-// unsubscribe link is scoped to the bot's source so one click covers
-// "stop emails from this source"; the page lets the user drill down
-// to a single bot.
 func SendInitialDigest(cfg config.Config, user models.User, bot models.BotConfig, src string, rows []models.ResolvedRow) error {
 	botName := html.EscapeString(bot.Name)
 

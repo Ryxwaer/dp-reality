@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { requireUserId } from '~~/server/utils/auth'
-import { getDb, LISTING_COLLECTIONS } from '~~/server/utils/db'
+import { getDb, getListingCollections } from '~~/server/utils/db'
 
 const querySchema = z.object({
   start: z.string(),
@@ -20,8 +20,6 @@ interface SeriesPoint {
 }
 
 export default defineEventHandler(async (event): Promise<SeriesPoint[]> => {
-  // Auth is not strictly required (listings are global), but we still gate
-  // the endpoint so unauthenticated clients cannot hammer the DB.
   await requireUserId(event)
 
   const { start, end, period } = await getValidatedQuery(event, querySchema.parse)
@@ -33,12 +31,9 @@ export default defineEventHandler(async (event): Promise<SeriesPoint[]> => {
   }
 
   const db = await getDb()
+  const collections = await getListingCollections(db)
 
-  // Union the per-source collections into a single listings series.
-  // The base query runs on the first collection; every additional
-  // collection is folded in via `$unionWith` before the shared
-  // group/sort stages.
-  const [firstCollection, ...restCollections] = LISTING_COLLECTIONS
+  const [firstCollection, ...restCollections] = collections
   if (!firstCollection) return []
 
   const matchStage = { $match: { first_seen: { $gte: startDate, $lte: endDate } } }

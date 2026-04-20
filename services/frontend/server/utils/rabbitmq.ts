@@ -1,15 +1,5 @@
 import * as amqp from 'amqplib'
 
-/**
- * Lazy, single-connection RabbitMQ client for the Nuxt server. The first
- * publish triggers a connect; subsequent publishes reuse the same channel.
- * On error the cached channel is dropped and the next publish reconnects.
- *
- * Publishing is fire-and-forget from the callers' point of view: we surface
- * errors through the returned Promise, but request handlers decide whether
- * to await them. A broker outage should never block user-visible actions.
- */
-
 let connectionPromise: Promise<amqp.ChannelModel> | null = null
 let channelPromise: Promise<amqp.Channel> | null = null
 
@@ -58,10 +48,6 @@ async function getChannel(): Promise<amqp.Channel> {
   return channelPromise
 }
 
-/**
- * Publish a JSON payload to a fanout exchange, asserting the exchange as
- * `durable` first. Messages are published as persistent.
- */
 export async function publishFanout<T>(
   exchange: string,
   payload: T

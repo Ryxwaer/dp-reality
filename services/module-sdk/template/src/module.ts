@@ -1,27 +1,9 @@
 import type { ModuleFactory, ModuleMatcher } from '../host-types'
 
-/**
- * A minimal example module: a single-input bot that stores a comma
- * separated list of cities. Copy, rename, and extend to taste.
- *
- * The module is the sole author of its matcher. `compileMatcher`
- * below takes the user's `config` (already validated against the
- * module's `configSchema` on the server) and returns a concrete
- * {@link ModuleMatcher} with values inlined. The server validates the
- * shape of the returned matcher and snapshots it onto the bot; the
- * Go notifier compiles it into a Mongo filter and runs it per scrape
- * event. There is no `config.*` indirection at run time.
- *
- * Conventions:
- *   - Drop `in`/`nin` filters whose value array would be empty — an
- *     absent config axis should be "no filter", not "match nothing".
- *   - Never reference a user-entered string as a `field` — use only
- *     field paths you control (the module author knows the target
- *     collection's schema).
- *
- * Remember: DO NOT import Vue — every primitive you need is on the
- * `host` argument below.
- */
+// Starter template: single-input bot storing a comma-separated list of
+// cities. `compileMatcher` inlines the user's validated config into a
+// matcher; drop `in`/`nin` filters whose value array is empty. Never
+// import Vue — use primitives from the `host` argument.
 const factory: ModuleFactory = ({ h, ref, saveBot, existingBot }) => ({
   setup() {
     const existingCities = Array.isArray(existingBot?.config?.cities)

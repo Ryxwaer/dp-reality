@@ -2,18 +2,6 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
-/**
- * Renders markdown as a right-side documentation panel.
- *
- * - `variant="side"`: a sticky aside for the left-over horizontal space.
- *   Hidden below `lg`.
- * - `variant="trigger"`: a small button that opens a slideover with the
- *   rendered markdown. Hidden on `lg+`.
- * - `variant="both"`: side panel on large screens AND the mobile trigger
- *   on small screens.
- *
- * Typical usage: `trigger` in the navbar right slot + `side` in the body.
- */
 const props = withDefaults(defineProps<{
   title: string
   source: string

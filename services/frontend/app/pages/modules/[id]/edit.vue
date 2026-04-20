@@ -12,9 +12,6 @@ const {
   status,
   error
 } = await useFetch<ModuleDoc>(() => `/api/modules/${moduleId.value}`, {
-  // Intentionally NOT `lazy` — we need the data before the form
-  // mounts so it can hydrate its `initial` prop correctly. Revalidate
-  // on mount in case the user edits from another tab.
   default: () => null as unknown as ModuleDoc
 })
 
@@ -33,10 +30,6 @@ async function onSubmit(payload: {
 }) {
   if (!existing.value) return
 
-  // Build a PATCH body that only includes fields the user actually
-  // changed. Keeps the request small, avoids bouncing the same
-  // values through server-side validation, and makes the audit trail
-  // obvious ("user only touched the notification").
   const body: Record<string, unknown> = {}
   if (payload.name !== existing.value.name) body.name = payload.name
   if (payload.description !== existing.value.description) body.description = payload.description
@@ -46,8 +39,6 @@ async function onSubmit(payload: {
   if (JSON.stringify(payload.notification) !== JSON.stringify(existing.value.notification)) {
     body.notification = payload.notification
   }
-  // `code: null` from the form means "keep the existing bundle"; only
-  // send `code` when the user explicitly picked a new file.
   if (payload.code) body.code = payload.code
 
   if (Object.keys(body).length === 0) {

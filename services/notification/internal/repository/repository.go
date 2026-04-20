@@ -18,10 +18,6 @@ const (
 	notificationsCol = "notifications"
 )
 
-// validCollectionName mirrors the frontend's `COLLECTION_PATTERN`
-// (`^[a-z][a-z0-9_]{0,62}$`). Guards against a compromised or buggy
-// module trying to read from an unrelated collection (`users`,
-// `notifications`, …) by naming it. Worst case a bad module is no-op.
 func validCollectionName(name string) bool {
 	if name == "" || len(name) > 63 {
 		return false
@@ -41,8 +37,6 @@ func validCollectionName(name string) bool {
 	return true
 }
 
-// Duplicate-key code for MongoDB. The driver doesn't export a constant
-// for this — 11000 is the documented wire code and is stable.
 const errDuplicateKey = 11000
 
 type Repository struct {
@@ -53,16 +47,9 @@ func New(db *mongo.Database) *Repository {
 	return &Repository{db: db}
 }
 
-// EnsureIndexes creates the indexes this service owns. The notification
-// service is the sole authority on `notifications`: the frontend just
-// reads and updates `unread` flags, so all index definitions live here.
 func (r *Repository) EnsureIndexes(ctx context.Context) error {
 	_, err := r.db.Collection(notificationsCol).Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			// Belt-and-suspenders: even though scraper-side $setOnInsert(run_id)
-			// means we should never be asked to insert the same (user, listing)
-			// twice, we still enforce it here so a redelivered scrape event is a
-			// no-op for the inbox.
 			Keys: bson.D{
 				{Key: "user_id", Value: 1},
 				{Key: "source", Value: 1},
@@ -71,7 +58,6 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetUnique(true).SetName("user_listing_unique"),
 		},
 		{
-			// Inbox listing: latest first for one user.
 			Keys: bson.D{
 				{Key: "user_id", Value: 1},
 				{Key: "matched_at", Value: -1},
@@ -79,7 +65,6 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetName("user_recent"),
 		},
 		{
-			// Unread badge count.
 			Keys: bson.D{
 				{Key: "user_id", Value: 1},
 				{Key: "unread", Value: 1},
@@ -90,11 +75,6 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 	return err
 }
 
-// FetchActiveUsersForScope returns users with at least one active bot
-// whose `source` and `collection` both match the scrape event's scope.
-// The `$elemMatch` ensures we only consider bots that pass all three
-// conditions together — without it, a user with a stopped bazos bot and
-// an active sreality bot would match a `(bazos, reality)` scope.
 func (r *Repository) FetchActiveUsersForScope(ctx context.Context, source, collection string) ([]models.User, error) {
 	cursor, err := r.db.Collection(usersCol).Find(ctx,
 		bson.D{{Key: "bots", Value: bson.D{{Key: "$elemMatch", Value: bson.D{
@@ -112,8 +92,6 @@ func (r *Repository) FetchActiveUsersForScope(ctx context.Context, source, colle
 	return users, cursor.All(ctx, &users)
 }
 
-// FetchUserByID loads a single user by hex ObjectID. Returns
-// mongo.ErrNoDocuments if not found.
 func (r *Repository) FetchUserByID(ctx context.Context, hex string) (*models.User, error) {
 	oid, err := bson.ObjectIDFromHex(hex)
 	if err != nil {
@@ -126,18 +104,6 @@ func (r *Repository) FetchUserByID(ctx context.Context, hex string) (*models.Use
 	return &user, nil
 }
 
-// FindBotMatches streams the subset of listings in `collection` that
-// match `{run_id: runID} AND extraFilter` and returns them as decoded
-// Listing values. `extraFilter` is expected to come from
-// specmatcher.Compile and is the per-bot matcher. The scraper's
-// $setOnInsert(run_id) semantics mean re-upserted (already-known)
-// listings keep their original run_id, so this query never returns a
-// previously-notified listing.
-//
-// No Limit() cap here — the matcher is already narrow and the run_id
-// index keeps it cheap. Callers are expected to iterate the returned
-// slice in-memory, which is bounded by how many listings a single
-// bot's filter matches in a single run.
 func (r *Repository) FindBotMatches(ctx context.Context, collection, runID string, extraFilter bson.M) ([]models.Listing, error) {
 	if !validCollectionName(collection) {
 		return nil, fmt.Errorf("refusing to query invalid collection name %q", collection)
@@ -145,10 +111,6 @@ func (r *Repository) FindBotMatches(ctx context.Context, collection, runID strin
 	filter := bson.M{"run_id": runID}
 	for k, v := range extraFilter {
 		if _, clash := filter[k]; clash {
-			// The compiled matcher must not override run_id. Defensive:
-			// validFieldPath already rejects `run_id` via the regex only
-			// if the module names it — we still make the conflict loud
-			// rather than silently merging.
 			return nil, fmt.Errorf("matcher clashes with reserved key %q", k)
 		}
 		filter[k] = v
@@ -164,11 +126,6 @@ func (r *Repository) FindBotMatches(ctx context.Context, collection, runID strin
 	return listings, cursor.All(ctx, &listings)
 }
 
-// FetchListingsBetween returns listings with first_seen in (start, end]
-// from the given collection, sorted oldest-first. Used by the
-// bot.created flow for an exact 24h window — it intentionally ignores
-// run_id because a brand-new bot should see every recent listing that
-// matches its filter, including ones discovered in earlier runs.
 func (r *Repository) FetchListingsBetween(ctx context.Context, collection string, start, end time.Time) ([]models.Listing, error) {
 	if !validCollectionName(collection) {
 		return nil, fmt.Errorf("refusing to query invalid collection name %q", collection)
@@ -188,11 +145,6 @@ func (r *Repository) FetchListingsBetween(ctx context.Context, collection string
 	return listings, cursor.All(ctx, &listings)
 }
 
-// InsertNotifications persists a batch of notifications for one user.
-// Duplicate-key errors (one per `(user_id, source, source_id)` race)
-// are swallowed — the unique index is a safety net, not a dedup
-// oracle. Returns the subset of `rows` that were newly inserted,
-// preserving input order so the caller can email exactly those.
 func (r *Repository) InsertNotifications(
 	ctx context.Context,
 	userID bson.ObjectID,
@@ -235,7 +187,6 @@ func (r *Repository) InsertNotifications(
 	return survivors, nil
 }
 
-// DeleteUserNotifications removes every inbox row for a user.
 func (r *Repository) DeleteUserNotifications(ctx context.Context, userID bson.ObjectID) error {
 	if _, err := r.db.Collection(notificationsCol).DeleteMany(ctx,
 		bson.D{{Key: "user_id", Value: userID}},

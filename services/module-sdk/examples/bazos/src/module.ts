@@ -1,27 +1,4 @@
-import type { ModuleFactory, ModuleMatcher } from '../../../template/host-types'
-
-/**
- * Bazos module. Configuration is **structured** — each filter is its
- * own field in `config`. Users can fill the form by hand, or paste a
- * reality.bazos.cz URL and click "Prefill from URL" to replace every
- * field with values extracted from that URL (one-shot convert).
- *
- * `compileMatcher` then reads the structured config and emits filters
- * over the `bazos` collection. The URL itself is **not** persisted —
- * only the resulting fields. This makes re-editing a bot obvious
- * (you see the fields, not a URL the portal may have rewritten).
- *
- * Supported structured fields → matcher output:
- *
- *   listing_type  (sale|rent)   → price_type eq, category_main eq
- *   property_sub  (byt|dum|…)   → category_sub eq
- *   search_text                 → description contains (ci)
- *   psc           (5 digits)    → psc eq
- *   min_price / max_price       → price gte / price lte
- *
- * `humkreis` (radius) is intentionally unsupported — bazos has no
- * coordinates on listings, so a radius would be a lie on our side.
- */
+import type { ModuleFactory, ModuleMatcher, ModuleManifest } from '../../../template/host-types'
 
 type ListingType = '' | 'sale' | 'rent'
 type PropertySub
@@ -48,18 +25,12 @@ const EMPTY_CONFIG: BazosConfig = {
   max_price: null
 }
 
-// Bazos stores `category_main` as the URL path slug it scraped from
-// (`prodam` for sale, `pronajmu` for rent — the latter is the verb
-// form Bazos actually uses; `pronajem` returns a soft-404). Keep this
-// in sync with `_CATEGORY_MAIN_TO_PRICE` on the scraper.
+// Matches the scraper's `_CATEGORY_MAIN_TO_PRICE` keys.
 const LISTING_TYPE_TO_MAIN: Record<Exclude<ListingType, ''>, string> = {
   sale: 'prodam',
   rent: 'pronajmu'
 }
 
-// URL-prefill is tolerant on both historical variants — users may
-// paste either a Bazos-generated URL (`pronajmu`) or the dictionary
-// form (`pronajem`) picked up elsewhere.
 const BAZOS_PATH_PRICE: Record<string, Exclude<ListingType, ''>> = {
   prodam: 'sale',
   pronajmu: 'rent',
@@ -189,6 +160,77 @@ function normalizeConfig(raw: Partial<BazosConfig>): BazosConfig {
   return cfg
 }
 
+export const manifest: ModuleManifest = {
+  name: 'Bazos',
+  collection: 'bazos',
+  source: 'bazos',
+  description: `# Bazos module
+
+Configure a search over **reality.bazos.cz** — the bot will email you
+whenever a new listing matches the filters you pick.
+
+## How it works
+
+Every filter axis is its own form field (listing type, category,
+search text, postal code, price). You can also paste a bazos.cz URL
+and click **Prefill from URL** — the module parses the URL and
+replaces every field from it (one-shot convert). The URL itself is
+not saved.
+
+URL parsing covers:
+
+| Source                    | Populates                                        |
+|---------------------------|--------------------------------------------------|
+| \`/<prodam|pronajem>/\`   | listing type                                     |
+| \`/<byt|dum|…>/\`         | category                                         |
+| \`hledat\`                | search text (description contains)               |
+| \`hlokalita\`             | postal code (exact match)                        |
+| \`cenaod\` / \`cenado\`   | min / max price                                  |
+| \`humkreis\`              | **ignored** — bazos has no coordinates on listings |
+
+## Data shape
+
+Each match in the \`bazos\` collection stores:
+- \`title\`, \`description\` (teaser from the list page), \`price\`, \`price_type\`
+- \`psc\`, \`city\`, \`locality_raw\`
+- \`category_main\`, \`category_sub\`, \`property_type\`
+- \`url\`
+
+No disposition field — Bazos list pages don't expose a structured
+disposition column. Filter on \`title\` contains instead if you want
+\`2+kk\` matches.
+`,
+  configSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      listing_type: { type: 'string', enum: ['', 'sale', 'rent'] },
+      property_sub: {
+        type: 'string',
+        enum: [
+          '', 'byt', 'dum', 'pozemek',
+          'nebytove-prostory', 'kancelar', 'sklad', 'obchod',
+          'garaz', 'chata', 'chalupa', 'ostatni'
+        ]
+      },
+      search_text: { type: 'string', maxLength: 200 },
+      psc: { type: 'string', pattern: '^(\\d{5})?$' },
+      min_price: { type: ['number', 'null'], minimum: 0 },
+      max_price: { type: ['number', 'null'], minimum: 0 }
+    }
+  },
+  notification: {
+    subject: 'Bazos: {{count}} new listings',
+    title: 'title',
+    url: 'url',
+    fields: [
+      { label: 'Price', value: '{{ price }} CZK ({{ price_type }})' },
+      { label: 'Location', value: '{{ city }} {{ psc }}' },
+      { label: 'Description', value: '{{ description }}' }
+    ]
+  }
+}
+
 const factory: ModuleFactory = ({ h, ref, reactive, computed, saveBot, existingBot }) => {
   const initial = normalizeConfig((existingBot?.config ?? {}) as Partial<BazosConfig>)
 
@@ -223,7 +265,6 @@ const factory: ModuleFactory = ({ h, ref, reactive, computed, saveBot, existingB
       prefillError.value = preview.error ?? 'Invalid URL'
       return
     }
-    // Replace-all: wipe every field, then apply whatever the URL gave us.
     Object.assign(cfg, EMPTY_CONFIG, preview.patch)
     lastPrefill.value = { summary: preview.summary, ignored: preview.ignored }
   }

@@ -7,22 +7,6 @@ import { validateConfigSchemaShape, EMPTY_CONFIG_SCHEMA } from '~~/server/utils/
 const MAX_CODE_BYTES = 1_048_576
 const MAX_DESC_BYTES = 32_768
 
-/**
- * `collection` is the MongoDB collection this module's bots query
- * against — e.g. `bazos` for Bazos listings, `sreality` for Sreality
- * listings, or a bespoke collection a third-party module introduces.
- * `source` identifies which scraper feeds that collection on this
- * module's behalf; the consumer uses (source, collection) as a
- * pre-filter so a module never runs its matcher against a collection
- * it doesn't own.
- *
- * Both patterns are deliberately narrow (no `$`, no `.`, no leading
- * digit) so they're safe to round-trip into Mongo queries unescaped.
- *
- * `configSchema` is a JSON Schema the server uses to validate user
- * input on `saveBot`. The matcher itself is no longer declared on the
- * module — each bot's `.mjs` emits a compiled matcher at save time.
- */
 const COLLECTION_PATTERN = /^[a-z][a-z0-9_]{0,62}$/
 const SOURCE_PATTERN = /^[a-z][a-z0-9_]{0,62}$/
 

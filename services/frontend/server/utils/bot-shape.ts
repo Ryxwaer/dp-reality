@@ -1,16 +1,7 @@
 import type { BotConfig, BotStatus, ModuleMatcher, NotificationSpec } from '~~/shared/types'
 import { BOT_STATUSES } from '~~/shared/types'
 
-/**
- * Raw bot-document shape as stored in `users.bots[]`. We accept the
- * legacy `active?: boolean` field too so that any row that slipped past
- * the one-off migration still reads cleanly. New writes use `status`
- * exclusively.
- *
- * `matcher` and `notification` are snapshots taken when the bot was
- * created; a bot that predates the matcher-rework will be missing both
- * and must be recreated by the user.
- */
+// Raw bot document as stored in users.bots[]. `active?` is legacy.
 export interface RawBot {
   id: string
   module_id?: string
@@ -45,10 +36,6 @@ const EMPTY_NOTIFICATION: NotificationSpec = {
   fields: []
 }
 
-/**
- * Normalise a raw Mongo subdocument into the API-facing BotConfig
- * shape. Single definition so list/get/patch/delete all agree.
- */
 export function shapeBot(raw: RawBot): BotConfig {
   return {
     id: raw.id,

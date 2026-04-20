@@ -10,10 +10,6 @@ defineEmits<{
   close: []
 }>()
 
-// The module's notification spec decided which fields to surface — we
-// just show them back in the same order. Source is always shown first
-// as a stable pivot so users can tell where a row came from even on
-// generic modules with no explicit "source" row.
 const infoRows = computed(() => [
   { label: 'Source', value: props.notification.source },
   ...(props.notification.fields ?? [])

@@ -1,15 +1,6 @@
 import { getDb, COLLECTIONS } from '../utils/db'
 
-/**
- * Nitro startup plugin: ensures MongoDB indexes exist for the collections
- * the frontend BFF *owns* — `users` and `modules`.
- *
- * Per-source listing collections (`bazos`, `sreality`, …) are owned by
- * their respective scrapers and `notifications` is owned by the
- * notification service, so those are deliberately not touched here. The
- * frontend is free to read from and (for the inbox's mark-as-read flow)
- * write to `notifications`, but it does not gate on its schema.
- */
+// Index-ensure only runs for the collections the BFF owns (users, modules).
 export default defineNitroPlugin(async () => {
   try {
     const db = await getDb()

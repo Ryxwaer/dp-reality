@@ -17,10 +17,6 @@ export interface UserRecord extends Document {
   }
 }
 
-/**
- * Resolves the current session and returns the full Mongo user document.
- * Throws 401 when there is no session or the user was deleted.
- */
 export async function requireUser(event: H3Event): Promise<WithId<UserRecord>> {
   const { user } = await requireUserSession(event)
 
@@ -37,9 +33,6 @@ export async function requireUser(event: H3Event): Promise<WithId<UserRecord>> {
   return doc
 }
 
-/**
- * Convenience accessor for routes that only need the ObjectId of the current user.
- */
 export async function requireUserId(event: H3Event): Promise<ObjectId> {
   const { user } = await requireUserSession(event)
   return new ObjectId(user.id)

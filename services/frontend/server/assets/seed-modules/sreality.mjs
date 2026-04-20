@@ -205,6 +205,89 @@ function isValidGeo(g) {
   const r = o.radius_km;
   return Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && Number.isFinite(c[0]) && typeof c[1] === "number" && Number.isFinite(c[1]) && typeof r === "number" && Number.isFinite(r) && r > 0 && r <= 500;
 }
+var manifest = {
+  name: "Sreality",
+  collection: "sreality",
+  source: "sreality",
+  description: `# Sreality module
+
+Configure a search over **sreality.cz** \u2014 the bot will email you
+whenever a new listing matches the filters you pick.
+
+## How it works
+
+Every filter axis is its own form field (type, transaction, disposition,
+region, price). You can also paste a sreality.cz/hledani URL and click
+**Prefill from URL** \u2014 the module parses the URL and replaces every
+field from it (one-shot convert). The URL itself is not saved.
+
+URL parsing covers:
+
+| Source                                | Populates                                 |
+|---------------------------------------|-------------------------------------------|
+| \`/hledani/<byty|domy|pozemky|\u2026>\`   | property type                             |
+| \`/<prodej|pronajem>\`                | transaction                               |
+| \`/<disposition>\` path segment       | disposition (e.g. \`1+kk\`)                |
+| \`cena-od\` / \`cena-do\`             | min / max price                           |
+| \`region\`                            | free-text region (locality contains)      |
+| \`region-id\` + \`vzdalenost\`        | true radius search via GeoJSON \`gps\`     |
+
+Radius search only compiles to \`$geoWithin\` when the URL includes a
+\`region-id\` the module has a centroid for (~12 biggest Czech cities).
+Manual text input always produces a \`locality contains\` match.
+
+## Data shape
+
+Each match in the \`sreality\` collection stores:
+- \`title\`, \`price\`, \`price_type\`, \`disposition\`
+- \`locality\`, \`city\`
+- \`gps\` (GeoJSON Point, \`[lon, lat]\`)
+- \`category_main_cb\`, \`category_sub_cb\`, \`category_type_cb\`
+- \`labels\` \u2014 structural tags (ownership, material, state)
+- \`url\`
+`,
+  configSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      property_type: { type: "string", enum: ["", "apartment", "house", "land", "commercial"] },
+      listing_type: { type: "string", enum: ["", "sale", "rent"] },
+      disposition: { type: "string", maxLength: 16 },
+      region_text: { type: "string", maxLength: 128 },
+      min_price: { type: ["number", "null"], minimum: 0 },
+      max_price: { type: ["number", "null"], minimum: 0 },
+      geo: {
+        oneOf: [
+          { type: "null" },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["center", "radius_km"],
+            properties: {
+              center: {
+                type: "array",
+                minItems: 2,
+                maxItems: 2,
+                items: { type: "number" }
+              },
+              radius_km: { type: "number", minimum: 0, maximum: 500 }
+            }
+          }
+        ]
+      }
+    }
+  },
+  notification: {
+    subject: "Sreality: {{count}} new listings",
+    title: "title",
+    url: "url",
+    fields: [
+      { label: "Price", value: "{{ price }} CZK ({{ price_type }})" },
+      { label: "Location", value: "{{ locality }}" },
+      { label: "Layout", value: "{{ disposition }}" }
+    ]
+  }
+};
 function normalizeConfig(raw) {
   const cfg = { ...EMPTY_CONFIG, ...raw };
   if (!["apartment", "house", "land", "commercial"].includes(cfg.property_type)) cfg.property_type = "";
@@ -523,5 +606,6 @@ var factory = ({ h, ref, reactive, computed, saveBot, existingBot }) => {
 };
 var module_default = factory;
 export {
-  module_default as default
+  module_default as default,
+  manifest
 };

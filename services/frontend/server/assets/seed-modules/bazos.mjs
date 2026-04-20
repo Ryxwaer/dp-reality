@@ -124,6 +124,85 @@ function normalizeConfig(raw) {
   cfg.max_price = typeof cfg.max_price === "number" && Number.isFinite(cfg.max_price) ? cfg.max_price : null;
   return cfg;
 }
+var manifest = {
+  name: "Bazos",
+  collection: "bazos",
+  source: "bazos",
+  description: `# Bazos module
+
+Configure a search over **reality.bazos.cz** \u2014 the bot will email you
+whenever a new listing matches the filters you pick.
+
+## How it works
+
+Every filter axis is its own form field (listing type, category,
+search text, postal code, price). You can also paste a bazos.cz URL
+and click **Prefill from URL** \u2014 the module parses the URL and
+replaces every field from it (one-shot convert). The URL itself is
+not saved.
+
+URL parsing covers:
+
+| Source                    | Populates                                        |
+|---------------------------|--------------------------------------------------|
+| \`/<prodam|pronajem>/\`   | listing type                                     |
+| \`/<byt|dum|\u2026>/\`         | category                                         |
+| \`hledat\`                | search text (description contains)               |
+| \`hlokalita\`             | postal code (exact match)                        |
+| \`cenaod\` / \`cenado\`   | min / max price                                  |
+| \`humkreis\`              | **ignored** \u2014 bazos has no coordinates on listings |
+
+## Data shape
+
+Each match in the \`bazos\` collection stores:
+- \`title\`, \`description\` (teaser from the list page), \`price\`, \`price_type\`
+- \`psc\`, \`city\`, \`locality_raw\`
+- \`category_main\`, \`category_sub\`, \`property_type\`
+- \`url\`
+
+No disposition field \u2014 Bazos list pages don't expose a structured
+disposition column. Filter on \`title\` contains instead if you want
+\`2+kk\` matches.
+`,
+  configSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      listing_type: { type: "string", enum: ["", "sale", "rent"] },
+      property_sub: {
+        type: "string",
+        enum: [
+          "",
+          "byt",
+          "dum",
+          "pozemek",
+          "nebytove-prostory",
+          "kancelar",
+          "sklad",
+          "obchod",
+          "garaz",
+          "chata",
+          "chalupa",
+          "ostatni"
+        ]
+      },
+      search_text: { type: "string", maxLength: 200 },
+      psc: { type: "string", pattern: "^(\\d{5})?$" },
+      min_price: { type: ["number", "null"], minimum: 0 },
+      max_price: { type: ["number", "null"], minimum: 0 }
+    }
+  },
+  notification: {
+    subject: "Bazos: {{count}} new listings",
+    title: "title",
+    url: "url",
+    fields: [
+      { label: "Price", value: "{{ price }} CZK ({{ price_type }})" },
+      { label: "Location", value: "{{ city }} {{ psc }}" },
+      { label: "Description", value: "{{ description }}" }
+    ]
+  }
+};
 var factory = ({ h, ref, reactive, computed, saveBot, existingBot }) => {
   const initial = normalizeConfig(existingBot?.config ?? {});
   const name = ref(existingBot?.name ?? "Bazos bot");
@@ -399,5 +478,6 @@ var factory = ({ h, ref, reactive, computed, saveBot, existingBot }) => {
 };
 var module_default = factory;
 export {
-  module_default as default
+  module_default as default,
+  manifest
 };

@@ -15,29 +15,11 @@ const EMPTY_NOTIFICATION: NotificationSpec = {
   fields: []
 }
 
-/**
- * Create a bot. The module's `.mjs` authored the `matcher` from the
- * user's `config`; we validate both independently here:
- *
- *   - `config` against `module.configSchema` (user-supplied, not trusted)
- *   - `matcher` against MATCHER_SCHEMA (author-supplied, trusted shape
- *     but still shape-validated so a buggy bundle can't insert
- *     `{ op: '$where', … }`)
- *
- * On success we snapshot `{ source, collection, matcher, notification }`
- * onto the bot so the Go notifier never has to join `modules` in its
- * hot path.
- */
 const bodySchema = z.object({
   module_id: z.string().refine(v => ObjectId.isValid(v), { message: 'Invalid module_id' }),
   name: z.string().trim().min(1).max(100),
   config: z.record(z.string(), z.unknown()),
   matcher: MATCHER_SCHEMA,
-  /**
-   * Modules still speak the simple "active: bool" protocol through
-   * the SaveBot host API. We translate that to `status` here so the
-   * rest of the system never has to juggle two shapes.
-   */
   active: z.boolean().optional(),
   email_notifications: z.boolean().optional()
 })
@@ -112,10 +94,6 @@ export default defineEventHandler(async (event) => {
     { $push: { bots: bot } as never }
   )
 
-  // Trigger the initial 24h digest email via the notification service. If
-  // the broker is unavailable we roll back the bot insert and surface a
-  // 503 — silencing this error once cost hours of "why didn't I get an
-  // email?" debugging.
   try {
     await publishBotCreated({
       user_id: user._id.toHexString(),

@@ -1,35 +1,10 @@
 <script setup lang="ts">
-/**
- * Plain single-line text input with three extras on top:
- *
- *   1. Syntax highlighting — any `{{ field }}` token in the value is
- *      rendered in the theme's primary colour (or warning if the field
- *      isn't in the fetched sample). The highlight lives in an
- *      absolute-positioned overlay that mirrors the input byte-for-byte
- *      so the caret sits exactly under the right glyphs. The real
- *      `<input>` text is `color: transparent` but keeps its caret.
- *
- *   2. Autocomplete dropdown — opens when the caret is inside an
- *      unclosed `{{ … }}` or when the whole value is a single bare
- *      identifier the user is still typing. Picking a suggestion
- *      rewrites the value to `{{ field }}` at the caret position.
- *
- *   3. Paired braces — typing `{{` auto-inserts `}}` and positions the
- *      caret between them, so the common case (pick a field from the
- *      dropdown or type it inside braces) is two keystrokes + tab.
- *
- * Public API is just `modelValue` + `update:modelValue` with a plain
- * string, so the parent keeps treating the value as a template. The
- * highlighting is purely a render concern.
- */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   modelValue: string
   keys: string[]
   placeholder?: string
-  /** Identifiers not in the sample but still valid (e.g. `count` for
-   *  the subject line, injected by the notifier at send time). */
   extraKeys?: string[]
 }>()
 
@@ -46,10 +21,6 @@ const MUSTACHE_BADGE = '{{…}}'
 
 const validKeys = computed(() => new Set([...props.keys, ...(props.extraKeys ?? [])]))
 
-// ---------------------------------------------------------------------------
-// Highlight segments
-// ---------------------------------------------------------------------------
-
 const PLACEHOLDER_SOURCE = '\\{\\{\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\}\\}'
 const BARE_IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
@@ -62,8 +33,6 @@ const segments = computed<Segment[]>(() => {
   const value = props.modelValue ?? ''
   const out: Segment[] = []
   let last = 0
-  // Fresh regex every invocation — exec() mutates `lastIndex`, which
-  // would be a lint-flagged side effect on a module-level constant.
   const re = new RegExp(PLACEHOLDER_SOURCE, 'g')
   for (const m of value.matchAll(re)) {
     const idx = m.index ?? 0
@@ -79,10 +48,6 @@ const segments = computed<Segment[]>(() => {
   }
   return out
 })
-
-// ---------------------------------------------------------------------------
-// Autocomplete context
-// ---------------------------------------------------------------------------
 
 interface Ctx {
   mode: 'none' | 'bare' | 'mustache'
@@ -148,10 +113,6 @@ function refreshCtx() {
   open.value = suggestions.value.length > 0 && ctx.value.mode !== 'none'
 }
 
-// ---------------------------------------------------------------------------
-// Event handlers
-// ---------------------------------------------------------------------------
-
 function onInput(e: Event) {
   const target = e.target as HTMLInputElement
   emit('update:modelValue', target.value)
@@ -199,8 +160,6 @@ function onKeydown(e: KeyboardEvent) {
     refreshCtx()
   }
 
-  // Auto-close `{{` → `{{ | }}` so the common "just type it" path
-  // isn't punished with an extra close-brace dance.
   if (e.key === '{') {
     const el = inputEl.value
     if (!el) return
@@ -291,10 +250,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="relative w-full">
-    <!-- Real input carries focus, keyboard, selection — everything the
-         browser knows how to do. Its text is transparent so the caret
-         shows through the overlay above; border + background provide
-         the visible chrome. -->
     <input
       ref="inputEl"
       :value="modelValue"
@@ -310,9 +265,6 @@ onBeforeUnmount(() => {
       @scroll="syncScroll"
     >
 
-    <!-- Highlight layer. Positioned on top with pointer-events off so
-         clicks reach the input. Padding/border/font MUST match the
-         input or the highlight drifts off the caret. -->
     <div
       ref="overlayEl"
       aria-hidden="true"
@@ -353,20 +305,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .field-input {
-  /* Hide the real glyphs but keep the caret visible, so the coloured
-     overlay above is what the user reads while they type. */
   color: transparent;
   caret-color: var(--ui-text-highlighted, var(--ui-text, #111));
 }
-/* Native placeholder inherits `color`, which we just nuked. Restore a
-   muted tone explicitly so the field still prompts the user. */
 .field-input::placeholder {
   color: var(--ui-text-muted, #94a3b8);
   opacity: 1;
 }
 .field-input::selection {
-  /* Visible selection when dragging across the transparent glyphs.
-     The browser applies selection to the input, not the overlay. */
   color: transparent;
   background: color-mix(in srgb, var(--ui-primary, #3b82f6) 30%, transparent);
 }

@@ -1,22 +1,6 @@
-/**
- * Field resolver for NotificationSpec expressions.
- *
- * Mirrors services/notification/internal/notify/resolve.go exactly so
- * the module editor's live preview shows the same text the user will
- * be emailed. Any change here must be reflected in the Go side (and
- * vice versa).
- *
- * Grammar:
- *   - A bare identifier ("title") reads doc["title"] and HTML-escapes
- *     it. Missing / null / undefined / empty → "".
- *   - A string containing "{{ ... }}" is a simple substitution
- *     template; each {{ name }} is replaced by the HTML-escaped
- *     doc[name]. Whitespace around the name is tolerated. No filters,
- *     no loops, no nested paths.
- *
- * Both paths always return an HTML-safe string.
- */
-
+// Mirror of services/notification/internal/notify/resolve.go — any
+// change here must be mirrored in the Go resolver so the preview and
+// email render identically.
 import type { NotificationField, NotificationSpec } from './types'
 
 const PLACEHOLDER = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g
@@ -38,10 +22,6 @@ function stringify(v: unknown): string {
   return String(v)
 }
 
-/**
- * Resolve a single NotificationSpec expression against a document.
- * Output is always HTML-safe.
- */
 export function resolve(expr: string, doc: Record<string, unknown>): string {
   const trimmed = expr.trim()
   if (trimmed === '') return ''
@@ -59,11 +39,6 @@ export interface ResolvedRow {
   fields: NotificationField[]
 }
 
-/**
- * Apply an entire spec to a doc. Returns null if the required title or
- * url slot resolves empty — that mirrors the Go resolver's "skip row"
- * semantics, so the preview hides rows that wouldn't actually be sent.
- */
 export function apply(spec: NotificationSpec, doc: Record<string, unknown>): ResolvedRow | null {
   const title = resolve(spec.title ?? '', doc).trim()
   const url = resolve(spec.url ?? '', doc).trim()
@@ -77,10 +52,6 @@ export function apply(spec: NotificationSpec, doc: Record<string, unknown>): Res
   return { title, url, fields }
 }
 
-/**
- * Resolve an email subject. Same grammar as row slots, plus a virtual
- * `{{count}}` placeholder exposing how many rows are in the digest.
- */
 export function resolveSubject(spec: NotificationSpec, count: number): string {
   const subject = resolve(spec.subject ?? '', { count }).trim()
   if (subject === '') return 'Notification'

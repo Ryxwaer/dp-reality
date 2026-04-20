@@ -1,18 +1,4 @@
-"""Bazos list-page scraper.
-
-Deliberately scrapes the public HTML list pages and nothing else:
- * No per-listing detail fetches (respectful + fast + no session).
- * No cross-source normalisation — the `bazos` collection stores what
-   the list page actually shows; downstream (module `.mjs`) decides
-   what `URL → matcher` translation looks like.
-
-Bazos individual listings are served under `/inzerat/<id>/<slug>.php`
-regardless of their transaction/property category, so the listing URL
-itself carries no category signal. To recover `price_type` and
-`property_type` we crawl a per-category matrix of list pages
-(`/prodam/<sub>/`, `/pronajem/<sub>/`) and take the category from the
-*page URL* we're reading, not from the listing href.
-"""
+"""Bazos list-page scraper."""
 from __future__ import annotations
 
 import logging
@@ -39,21 +25,12 @@ HEADERS = {
 logger = logging.getLogger(__name__)
 
 
-# ---------- URL-slug → coarse-bucket mapping ----------
-
 _CATEGORY_MAIN_TO_PRICE: dict[str, PriceType] = {
     "prodam": PriceType.SALE,
-    # Bazos uses the first-person verb form `pronajmu` ("I'm renting")
-    # in rent list URLs — NOT the noun `pronajem`. Using the noun yields
-    # HTTP 404 with a soft fallback to the homepage, which is the
-    # classic way to mis-ingest every rent listing as a sale. Keep this
-    # slug in sync with `LISTING_TYPE_TO_MAIN` in the bazos module.
+    # Rent pages live under /pronajmu/ (verb form), NOT /pronajem/.
     "pronajmu": PriceType.RENT,
 }
 
-# Everything the Bazos reality router accepts as segment 2. Only slugs
-# in this table are recognised as listings; unknown slugs are skipped
-# (safer than guessing — Bazos has occasionally added niche subcats).
 _CATEGORY_SUB_TO_PROPERTY: dict[str, PropertyType] = {
     "byt": PropertyType.APARTMENT,
     "dum": PropertyType.HOUSE,
@@ -68,39 +45,20 @@ _CATEGORY_SUB_TO_PROPERTY: dict[str, PropertyType] = {
     "ostatni": PropertyType.OTHER,
 }
 
-# Matches a Czech postal code (`XXXX X` with optional whitespace).
-# Anchored at the end of the locality string because the city often
-# appears immediately before the PSČ with no delimiter (e.g.
-# "Jičín508 01").
+# Czech PSČ anchored at the end: city and PSČ often run together ("Jičín508 01").
 _PSC_PATTERN = re.compile(r"(\d{3})\s*(\d{2})\s*$")
-# NOTE: we deliberately do **not** parse "disposition" (1+kk/3+1/…) here.
-# Bazos list pages don't expose a structured disposition column — the
-# token only shows up when a seller happened to type it into the title.
-# Fishing it out of free text produces a field that looks structured but
-# reflects seller copywriting habits, not Bazos's own taxonomy, so bots
-# can't rely on it. Sreality, by contrast, exposes disposition as a
-# canonical `category_sub_cb` code and keeps its own `disposition`.
 
 
 @dataclass(frozen=True)
 class _CategoryCursor:
-    """One cell in the scrape matrix: a Bazos transaction + property
-    category whose list page we're about to fetch. `price_type` and
-    `property_type` are derived here so each parsed row inherits the
-    cursor's category regardless of what its `/inzerat/...` URL says.
-    """
-    category_main: str   # "prodam" | "pronajem"
-    category_sub: str    # "byt", "dum", ...
+    """One (transaction × property) cell of the scrape matrix."""
+    category_main: str
+    category_sub: str
     price_type: PriceType
     property_type: PropertyType
 
 
 def _build_category_matrix() -> list[_CategoryCursor]:
-    """Cartesian product of transactions × property subcategories we
-    recognise. A handful of combos (e.g. pronajem/pozemek) 404 on
-    Bazos — we still emit a cursor for them and let the fetcher skip
-    non-200 responses, rather than hard-code the exclusions here.
-    """
     return [
         _CategoryCursor(main, sub, price_type, property_type)
         for main, price_type in _CATEGORY_MAIN_TO_PRICE.items()
@@ -109,26 +67,16 @@ def _build_category_matrix() -> list[_CategoryCursor]:
 
 
 def _parse_price(raw: str) -> int | None:
-    """Strip everything except digits. Returns None for free-text
-    prices like "V textu" or "Dohodou".
-    """
     digits = re.sub(r"[^\d]", "", raw)
     return int(digits) if digits else None
 
 
 def _parse_listing_id(href: str) -> str | None:
-    """Bazos ad URLs are `/inzerat/<id>/<slug>.php`. Anything else
-    (category index, admin pages, external links) is skipped.
-    """
     match = _INZERAT_ID_RE.match(href)
     return match.group(1) if match else None
 
 
 def _parse_locality(raw: str) -> tuple[str | None, str | None]:
-    """Returns `(city, psc)`. The locality cell on Bazos lists the
-    city concatenated with the postal code (e.g. "Brno614 00") so we
-    anchor on the 5-digit PSČ at the end and treat the rest as city.
-    """
     text = raw.strip()
     if not text:
         return None, None
@@ -187,19 +135,11 @@ def _parse_listing(element: Tag, cursor: _CategoryCursor) -> Listing | None:
 
 
 def _category_page_url(cursor: _CategoryCursor, page: int) -> str:
-    """Bazos paginates with a numeric offset appended to the path. The
-    first page is the bare `/<main>/<sub>/`; subsequent pages use
-    `/<main>/<sub>/<offset>/`.
-    """
     base = f"{BASE_URL}{cursor.category_main}/{cursor.category_sub}/"
     return base if page == 0 else f"{base}{page * 20}/"
 
 
 def _deduplicate(listings: Iterable[Listing]) -> list[Listing]:
-    """Dedup by `source_id`. When the same ad surfaces under multiple
-    category cursors (it shouldn't, but Bazos occasionally cross-lists),
-    the first cursor's categorisation wins.
-    """
     seen: set[str] = set()
     out: list[Listing] = []
     for listing in listings:
@@ -222,8 +162,6 @@ async def _scrape_category(
             logger.warning("HTTP error on %s, skipping: %s", url, exc)
             break
         if response.status_code == 404:
-            # Some combos (e.g. pronajem/pozemek) legitimately 404 —
-            # don't warn, just move on to the next cursor.
             logger.debug("Category %s/%s returned 404, skipping", cursor.category_main, cursor.category_sub)
             break
         if response.status_code != 200:

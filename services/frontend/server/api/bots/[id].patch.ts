@@ -10,13 +10,6 @@ const bodySchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   matcher: MATCHER_SCHEMA.optional(),
-  /**
-   * Accepted both as the legacy `active: bool` (module host API) and
-   * as the explicit `status` enum used by the bots table and the
-   * unsubscribe page. Never let callers revive a soft-deleted bot by
-   * PATCH — that would resurrect its notification history. If someone
-   * wants it back, they can create a new bot.
-   */
   active: z.boolean().optional(),
   status: z.enum(BOT_STATUSES.filter(s => s !== 'deleted') as [string, ...string[]]).optional(),
   email_notifications: z.boolean().optional()
@@ -29,10 +22,6 @@ const bodySchema = z.object({
     || v.email_notifications !== undefined,
   { message: 'At least one field must be provided' }
 ).refine(
-  // `config` and `matcher` must move together — the module's `.mjs`
-  // is the only producer of the matcher, and a config change implies
-  // a recomputed matcher. Allowing one without the other would desync
-  // what the user sees in the form from what the notifier matches on.
   v => (v.config === undefined) === (v.matcher === undefined),
   { message: '`config` and `matcher` must be patched together' }
 )
@@ -48,10 +37,6 @@ export default defineEventHandler(async (event) => {
 
   const db = await getDb()
 
-  // If the config is being changed, pull the module's schema to
-  // validate against. We read the bot first to discover which
-  // module it belongs to — users can't lie about `module_id` on a
-  // patch because the field isn't on the body schema.
   if (body.config !== undefined) {
     const userDoc = await db.collection(COLLECTIONS.users).findOne(
       { '_id': user._id, 'bots.id': id },
@@ -91,7 +76,6 @@ export default defineEventHandler(async (event) => {
     set['bots.$[bot].email_notifications'] = body.email_notifications
   }
 
-  // `status` wins over `active` when both are sent.
   if (body.status !== undefined) {
     set['bots.$[bot].status'] = body.status
   } else if (body.active !== undefined) {
@@ -99,9 +83,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const unset: Record<string, unknown> = {}
-  // If status is now being written, strip the legacy `active` field
-  // in the same update so the two representations don't drift. Safe
-  // to include even for rows that already lack the field.
   if (set['bots.$[bot].status'] !== undefined) {
     unset['bots.$[bot].active'] = ''
   }
@@ -115,8 +96,6 @@ export default defineEventHandler(async (event) => {
     { _id: user._id },
     update,
     {
-      // Only target non-deleted bots — prevents PATCH from resurrecting
-      // a soft-deleted bot.
       arrayFilters: [{ 'bot.id': id, 'bot.status': { $ne: 'deleted' } }]
     }
   )

@@ -19,10 +19,6 @@ const { data: moduleDoc, error: moduleError } = await useFetch<ModuleDoc>(
 
 const { component, loading, error, load } = useModuleLoader()
 
-// Email delivery is a host-level concern — every module gets the same
-// toggle instead of asking each `.mjs` author to render its own
-// checkbox. Defaults to on so a user who blindly clicks "Save" still
-// receives the initial digest.
 const emailNotifications = ref(true)
 
 async function saveBot(payload: SaveBotPayload) {
