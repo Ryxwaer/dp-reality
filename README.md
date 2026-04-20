@@ -117,11 +117,37 @@ Two RabbitMQ fanout exchanges drive email delivery:
 
 ```bash
 cp .env.example .env    # configure MongoDB URI, RabbitMQ, SMTP, session secret
-docker compose up --build
+docker compose -f compose.yml -f compose.dev.yml up --build
 ```
+
+The dev overlay (`compose.dev.yml`) publishes service ports to the host,
+downgrades the `nginx-proxy-manager_default` network to a local bridge
+(so no NPM instance is required locally), and enables `docker compose
+watch` live-reload blocks.
 
 - Dashboard: http://localhost:3000
 - RabbitMQ management: http://localhost:15672
+
+## Production deploy (Portainer on Fedora CoreOS)
+
+Stack type: **Repository**. Portainer clones the repo, reads `compose.yml`,
+and injects stack variables. Deployment prerequisites on the host:
+
+1. An `nginx-proxy-manager` stack is already running and has created
+   the `nginx-proxy-manager_default` network. The frontend attaches to
+   that network so NPM can proxy to `dp-reality-frontend:3000` by
+   container DNS — no host ports are exposed by this stack.
+2. Portainer stack variables (or a host-side `.env` next to
+   `compose.yml`) define every `${VAR}` the compose file references:
+   `MONGODB_URI`, `RABBITMQ_USER`/`RABBITMQ_PASS`, `MAIL_SMTP_*`,
+   `MAIL_FROM_EMAIL`, `APP_BASE_URL`, `UNSUBSCRIBE_SECRET`,
+   `NUXT_SESSION_PASSWORD`.
+3. External MongoDB is reachable from the host (the stack does not
+   spin up Mongo).
+
+SELinux on CoreOS is a non-issue here: the stack uses **only named
+volumes** (no host bind mounts), so the Docker daemon handles labeling
+and the `:z`/`:Z` mount suffixes aren't needed.
 
 ## Deployment Phases
 

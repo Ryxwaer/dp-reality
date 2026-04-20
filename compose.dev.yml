@@ -1,0 +1,49 @@
+services:
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  job-bazos:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/jobs/bazos/src
+          target: /app
+        - action: rebuild
+          path: ./services/jobs/bazos/requirements.txt
+
+  job-sreality:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/jobs/sreality/src
+          target: /app
+        - action: rebuild
+          path: ./services/jobs/sreality/requirements.txt
+
+  notification:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/notification
+
+  frontend:
+    ports:
+      - "3000:3000"
+    develop:
+      watch:
+        - action: sync
+          path: ./services/frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .output/
+            - .nuxt/
+        - action: rebuild
+          path: ./services/frontend/package.json
+
+networks:
+  nginx-proxy-manager_default:
+    external: false
+    driver: bridge

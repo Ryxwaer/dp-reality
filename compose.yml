@@ -1,16 +1,15 @@
 services:
   rabbitmq:
+    container_name: dp-reality-rabbitmq
     image: rabbitmq:3.13-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - dp-reality
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 15s
@@ -18,11 +17,14 @@ services:
       retries: 5
 
   job-bazos:
+    container_name: dp-reality-job-bazos
     build:
       context: .
       dockerfile: services/jobs/bazos/Dockerfile
-    env_file: .env
+    pull_policy: build
+    image: dp-reality-job-bazos:latest
     environment:
+      MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       SCRAPE_INTERVAL_MINUTES: ${BAZOS_INTERVAL:-5}
       SCRAPE_PAGES: ${BAZOS_PAGES:-5}
@@ -32,20 +34,16 @@ services:
     networks:
       - dp-reality
     restart: unless-stopped
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/jobs/bazos/src
-          target: /app
-        - action: rebuild
-          path: ./services/jobs/bazos/requirements.txt
 
   job-sreality:
+    container_name: dp-reality-job-sreality
     build:
       context: .
       dockerfile: services/jobs/sreality/Dockerfile
-    env_file: .env
+    pull_policy: build
+    image: dp-reality-job-sreality:latest
     environment:
+      MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       SCRAPE_INTERVAL_MINUTES: ${SREALITY_INTERVAL:-10}
     depends_on:
@@ -54,61 +52,51 @@ services:
     networks:
       - dp-reality
     restart: unless-stopped
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/jobs/sreality/src
-          target: /app
-        - action: rebuild
-          path: ./services/jobs/sreality/requirements.txt
 
   notification:
+    container_name: dp-reality-notification
     build:
       context: .
       dockerfile: services/notification/Dockerfile
-    env_file: .env
+    pull_policy: build
+    image: dp-reality-notification:latest
     environment:
+      MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      MAIL_SMTP_SERVER: ${MAIL_SMTP_SERVER}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
+      MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
+      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL}
+      APP_BASE_URL: ${APP_BASE_URL}
+      BATCH_WINDOW_SECONDS: ${BATCH_WINDOW_SECONDS:-300}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
     depends_on:
       rabbitmq:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
-    develop:
-      watch:
-        - action: rebuild
-          path: ./services/notification
 
   frontend:
+    container_name: dp-reality-frontend
     build:
       context: .
       dockerfile: services/frontend/Dockerfile
-    env_file: .env
+    pull_policy: build
+    image: dp-reality-frontend:latest
     environment:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD}
       NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD}
     depends_on:
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "3000:3000"
     networks:
       - dp-reality
+      - nginx-proxy-manager_default
     restart: unless-stopped
-    develop:
-      watch:
-        - action: sync
-          path: ./services/frontend
-          target: /app
-          ignore:
-            - node_modules/
-            - .output/
-            - .nuxt/
-        - action: rebuild
-          path: ./services/frontend/package.json
 
 volumes:
   rabbitmq_data:
@@ -117,3 +105,5 @@ networks:
   dp-reality:
     name: dp-reality
     driver: bridge
+  nginx-proxy-manager_default:
+    external: true
