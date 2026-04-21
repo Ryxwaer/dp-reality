@@ -14,7 +14,9 @@ interface NotificationRow extends Document {
   _id: ObjectId
   user_id: ObjectId
   bot_id?: string
-  listing_id?: ObjectId
+  // Always a string post-migration: sha256 hex (sreality) or ObjectID hex
+  // (legacy bazos / pre-migration sreality, normalized by the notifier).
+  listing_id?: string
   source: string
   source_id: string
   run_id?: string
@@ -47,7 +49,7 @@ export default defineEventHandler(async (event) => {
     id: d._id.toHexString(),
     user_id: d.user_id.toHexString(),
     bot_id: d.bot_id ?? '',
-    listing_id: d.listing_id?.toHexString() ?? '',
+    listing_id: d.listing_id ?? '',
     source: d.source,
     source_id: d.source_id,
     run_id: d.run_id ?? '',

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { config } from './config.js';
@@ -110,7 +110,10 @@ function parseEstate(
         }
       : undefined;
 
+  const key = buildDedupeKey(estate, priceType, propertyType, sourceId);
   return {
+    _id: createHash('sha256').update(key).digest('hex'),
+    key,
     source_id: sourceId,
     title: estate.name,
     price: estate.price > 0 ? estate.price : undefined,
@@ -126,6 +129,24 @@ function parseEstate(
     labels,
     url: buildUrl(estate, priceType, propertyType),
   };
+}
+
+// Stable composite key — see Listing schema for rationale. `seo.locality` is
+// the URL slug Sreality assigns (street + district), which stays constant
+// across republishes. We fall back to source_id when the slug is missing so
+// we never collapse unrelated slug-less listings into one doc. Including
+// `price` means a price change deliberately produces a new key → new doc →
+// new notification.
+function buildDedupeKey(
+  estate: SrealityEstate,
+  priceType: 'sale' | 'rent',
+  propertyType: 'apartment' | 'house',
+  sourceId: string,
+): string {
+  const slug = estate.seo?.locality || sourceId;
+  const subCb = estate.seo?.category_sub_cb ?? 'x';
+  const priceKey = estate.price > 0 ? String(estate.price) : 'ask';
+  return `${priceType}|${propertyType}|${subCb}|${slug}|${priceKey}`;
 }
 
 @Injectable()

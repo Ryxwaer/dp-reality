@@ -7,7 +7,11 @@ import (
 )
 
 type Listing struct {
-	ID           bson.ObjectID `bson:"_id,omitempty"`
+	// _id type varies by source: bazos still uses Mongo's ObjectID, sreality
+	// uses a sha256 hex string of the dedupe key. We keep it as `any` so a
+	// single struct can decode from any source's collection. Normalize to a
+	// hex string at write time via IDHex() before persisting/exposing.
+	ID           any           `bson:"_id,omitempty"`
 	Source       string        `bson:"source"`
 	SourceID     string        `bson:"source_id"`
 	RunID        string        `bson:"run_id"`
@@ -21,6 +25,20 @@ type Listing struct {
 	FirstSeen    time.Time     `bson:"first_seen"`
 	LastSeen     time.Time     `bson:"last_seen"`
 	Extra        map[string]any `bson:",inline"`
+}
+
+// IDHex returns the listing's _id as a stable string. Bazos docs decode
+// _id into bson.ObjectID (we hex-encode), sreality docs decode it as a
+// string (we pass through). Anything else yields "".
+func (l Listing) IDHex() string {
+	switch v := l.ID.(type) {
+	case bson.ObjectID:
+		return v.Hex()
+	case string:
+		return v
+	default:
+		return ""
+	}
 }
 
 func (l Listing) AsDoc() map[string]any {
@@ -124,10 +142,12 @@ type BotCreatedEvent struct {
 }
 
 type Notification struct {
-	ID        bson.ObjectID       `bson:"_id,omitempty"`
-	UserID    bson.ObjectID       `bson:"user_id"`
-	BotID     string              `bson:"bot_id"`
-	ListingID bson.ObjectID       `bson:"listing_id,omitempty"`
+	ID     bson.ObjectID `bson:"_id,omitempty"`
+	UserID bson.ObjectID `bson:"user_id"`
+	BotID  string        `bson:"bot_id"`
+	// ListingID is opaque — sha256 hex (sreality) or ObjectID hex (bazos).
+	// Stored as a plain string so a single field works across sources.
+	ListingID string              `bson:"listing_id,omitempty"`
 	Source    string              `bson:"source"`
 	SourceID  string              `bson:"source_id"`
 	RunID     string              `bson:"run_id"`
@@ -155,7 +175,7 @@ func NotificationFromResolved(
 	return Notification{
 		UserID:    userID,
 		BotID:     botID,
-		ListingID: l.ID,
+		ListingID: l.IDHex(),
 		Source:    l.Source,
 		SourceID:  l.SourceID,
 		RunID:     runID,

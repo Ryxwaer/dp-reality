@@ -8,7 +8,6 @@ This repo is implementation of project documented at `/home/ryxwaer/Documents/SK
 # Implementation guidelines
 
 - Adhere to the microservices architecture standards
-- Use abstraction instead of extensive comments - the code should be well structured and self explaining
 - Do not use fallbacks and error handling that would silence everything - it is better to fail fast to have direct feedback to resolve the issue quickly
 - Everything that user can see should be in english language
 - Application should have no information on what are individual modules doing. Module should implement whole logic that it needs in order to work without any help from `/frontend` app.
@@ -17,3 +16,7 @@ This repo is implementation of project documented at `/home/ryxwaer/Documents/SK
 # Deployemnt
 
 - minisforum server: `ssh minisforum`
+
+# Comments
+- Do not write comments explaining change you did unless it is something that can not be understood from code itself
+- Use abstraction instead of extensive comments - the code should be well structured and self explaining
