@@ -26,8 +26,8 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      SCRAPE_INTERVAL_MINUTES: ${BAZOS_INTERVAL:-5}
-      SCRAPE_PAGES: ${BAZOS_PAGES:-5}
+      SCRAPE_INTERVAL_MINUTES: 5
+      SCRAPE_PAGES: 5
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      SCRAPE_INTERVAL_MINUTES: ${SREALITY_INTERVAL:-10}
+      SCRAPE_INTERVAL_MINUTES: 10
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -63,13 +63,13 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      MAIL_SMTP_SERVER: ${MAIL_SMTP_SERVER}
-      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
+      MAIL_SMTP_SERVER: smtp.eu.mailgun.org
+      MAIL_SMTP_PORT: 587
       MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
       MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
-      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL}
-      APP_BASE_URL: ${APP_BASE_URL}
-      BATCH_WINDOW_SECONDS: ${BATCH_WINDOW_SECONDS:-300}
+      MAIL_FROM_EMAIL: noreply@ryxwaer.com
+      APP_BASE_URL: https://reality.ryxwaer.com
+      BATCH_WINDOW_SECONDS: 300
       UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
     depends_on:
       rabbitmq:

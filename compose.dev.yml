@@ -23,6 +23,8 @@ services:
           path: ./services/jobs/sreality/requirements.txt
 
   notification:
+    environment:
+      APP_BASE_URL: http://localhost:3000
     develop:
       watch:
         - action: rebuild

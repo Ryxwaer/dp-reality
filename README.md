@@ -138,9 +138,11 @@ and injects stack variables. Deployment prerequisites on the host:
    container DNS — no host ports are exposed by this stack.
 2. Portainer stack variables (or a host-side `.env` next to
    `compose.yml`) define every `${VAR}` the compose file references:
-   `MONGODB_URI`, `RABBITMQ_USER`/`RABBITMQ_PASS`, `MAIL_SMTP_*`,
-   `MAIL_FROM_EMAIL`, `APP_BASE_URL`, `UNSUBSCRIBE_SECRET`,
-   `NUXT_SESSION_PASSWORD`.
+   `MONGODB_URI`, `RABBITMQ_USER`/`RABBITMQ_PASS`, `MAIL_SMTP_LOGIN`,
+   `MAIL_SMTP_PASSWORD`, `UNSUBSCRIBE_SECRET`, `NUXT_SESSION_PASSWORD`.
+   Non-secret settings (`MAIL_SMTP_SERVER`, `MAIL_SMTP_PORT`,
+   `MAIL_FROM_EMAIL`, `APP_BASE_URL`, scrape intervals, batch window) are
+   baked into `compose.yml`; the dev overlay overrides `APP_BASE_URL`.
 3. External MongoDB is reachable from the host (the stack does not
    spin up Mongo).
 
