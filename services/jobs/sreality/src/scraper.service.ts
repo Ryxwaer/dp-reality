@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { config } from './config.js';
+import { type Listing } from './listing.schema.js';
 import { RepositoryService } from './repository.service.js';
 import { PublisherService } from './publisher.service.js';
-import type { Listing } from './listing.schema.js';
+
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 interface SrealityEstate {
   hash_id: number;
@@ -21,7 +23,21 @@ interface SrealityEstate {
   labelsAll?: string[][];
 }
 
-// Used only to reconstruct human-friendly detail URLs.
+type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
+
+const HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Accept: 'application/json',
+};
+
+const CATEGORIES = [
+  { main: 1, type: 1, priceType: 'sale', propertyType: 'apartment' },
+  { main: 1, type: 2, priceType: 'rent', propertyType: 'apartment' },
+  { main: 2, type: 1, priceType: 'sale', propertyType: 'house' },
+  { main: 2, type: 2, priceType: 'rent', propertyType: 'house' },
+] as const;
+
 const APARTMENT_SLUGS: Record<number, string> = {
   2: '1+kk',
   3: '1+1',
@@ -48,22 +64,69 @@ const HOUSE_SLUGS: Record<number, string> = {
   54: 'vicegeneracni-dum',
 };
 
-type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
+function buildUrl(
+  estate: SrealityEstate,
+  priceType: 'sale' | 'rent',
+  propertyType: 'apartment' | 'house',
+): string {
+  const locality = estate.seo?.locality ?? '';
+  if (!locality || !estate.hash_id) return 'https://www.sreality.cz/';
 
-const CATEGORIES = [
-  { main: 1, type: 1, priceType: 'sale', propertyType: 'apartment' },
-  { main: 1, type: 2, priceType: 'rent', propertyType: 'apartment' },
-  { main: 2, type: 1, priceType: 'sale', propertyType: 'house' },
-  { main: 2, type: 2, priceType: 'rent', propertyType: 'house' },
-] as const;
+  const saleRent = priceType === 'rent' ? 'pronajem' : 'prodej';
+  const propSlug = propertyType === 'apartment' ? 'byt' : 'dum';
+  const subCb = estate.seo?.category_sub_cb;
+  const table = propertyType === 'apartment' ? APARTMENT_SLUGS : HOUSE_SLUGS;
+  const dispSlug =
+    (subCb !== undefined && table[subCb]) ||
+    (propertyType === 'apartment' ? 'atypicky' : 'rodinny');
 
-const HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  Accept: 'application/json',
-};
+  return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${locality}/${estate.hash_id}`;
+}
 
-const MAX_CONSECUTIVE_FAILURES = 3;
+function parseEstate(
+  estate: SrealityEstate,
+  priceType: 'sale' | 'rent',
+  propertyType: 'apartment' | 'house',
+): ListingData | null {
+  const sourceId = String(estate.hash_id);
+  if (!sourceId || sourceId === '0') return null;
+
+  const disposition =
+    estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i)?.[1] ?? undefined;
+
+  const locality = estate.locality ?? '';
+  const localityParts = locality.split(',');
+  const city =
+    localityParts[localityParts.length - 1].trim().split(' - ')[0].trim() ||
+    undefined;
+
+  const labels = estate.labelsAll?.[0] ?? [];
+
+  const gps =
+    estate.gps && (estate.gps.lat !== 0 || estate.gps.lon !== 0)
+      ? {
+          type: 'Point' as const,
+          coordinates: [estate.gps.lon, estate.gps.lat] as [number, number],
+        }
+      : undefined;
+
+  return {
+    source_id: sourceId,
+    title: estate.name,
+    price: estate.price > 0 ? estate.price : undefined,
+    price_type: priceType,
+    property_type: propertyType,
+    disposition,
+    locality: locality || undefined,
+    city,
+    gps,
+    category_main_cb: estate.seo?.category_main_cb,
+    category_sub_cb: estate.seo?.category_sub_cb,
+    category_type_cb: estate.seo?.category_type_cb,
+    labels,
+    url: buildUrl(estate, priceType, propertyType),
+  };
+}
 
 @Injectable()
 export class ScraperService implements OnModuleInit {
@@ -119,7 +182,7 @@ export class ScraperService implements OnModuleInit {
     for (const cat of CATEGORIES) {
       const estates = await this.fetchPage(cat.main, cat.type);
       for (const estate of estates) {
-        const listing = this.parseEstate(estate, cat.priceType, cat.propertyType);
+        const listing = parseEstate(estate, cat.priceType, cat.propertyType);
         if (listing && !seen.has(listing.source_id)) {
           seen.add(listing.source_id);
           all.push(listing);
@@ -153,71 +216,5 @@ export class ScraperService implements OnModuleInit {
       );
       return [];
     }
-  }
-
-  private parseEstate(
-    estate: SrealityEstate,
-    priceType: 'sale' | 'rent',
-    propertyType: 'apartment' | 'house',
-  ): ListingData | null {
-    const sourceId = String(estate.hash_id);
-    if (!sourceId || sourceId === '0') return null;
-
-    const disposition =
-      estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i)?.[1] ?? undefined;
-
-    const locality = estate.locality ?? '';
-    const localityParts = locality.split(',');
-    const city =
-      localityParts[localityParts.length - 1].trim().split(' - ')[0].trim() ||
-      undefined;
-
-    // labelsAll[0] = structural tags; labelsAll[1] = POIs (dropped).
-    const labels = estate.labelsAll?.[0] ?? [];
-
-    // GeoJSON Point in [lon, lat] order for Mongo $centerSphere; skip 0/0.
-    const gps =
-      estate.gps && (estate.gps.lat !== 0 || estate.gps.lon !== 0)
-        ? {
-            type: 'Point' as const,
-            coordinates: [estate.gps.lon, estate.gps.lat] as [number, number],
-          }
-        : undefined;
-
-    return {
-      source_id: sourceId,
-      title: estate.name,
-      price: estate.price > 0 ? estate.price : undefined,
-      price_type: priceType,
-      property_type: propertyType,
-      disposition,
-      locality: locality || undefined,
-      city,
-      gps,
-      category_main_cb: estate.seo?.category_main_cb,
-      category_sub_cb: estate.seo?.category_sub_cb,
-      category_type_cb: estate.seo?.category_type_cb,
-      labels,
-      url: this.buildUrl(estate, priceType, propertyType),
-    };
-  }
-
-  private buildUrl(
-    estate: SrealityEstate,
-    priceType: 'sale' | 'rent',
-    propertyType: 'apartment' | 'house',
-  ): string {
-    const locality = estate.seo?.locality ?? '';
-    if (!locality || !estate.hash_id) return 'https://www.sreality.cz/';
-
-    const saleRent = priceType === 'rent' ? 'pronajem' : 'prodej';
-    const propSlug = propertyType === 'apartment' ? 'byt' : 'dum';
-    const subCb = estate.seo?.category_sub_cb;
-    const table = propertyType === 'apartment' ? APARTMENT_SLUGS : HOUSE_SLUGS;
-    const dispSlug =
-      (subCb !== undefined && table[subCb]) ||
-      (propertyType === 'apartment' ? 'atypicky' : 'rodinny');
-
-    return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${locality}/${estate.hash_id}`;
   }
 }

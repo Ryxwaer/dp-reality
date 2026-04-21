@@ -16,8 +16,18 @@ function getClient(): Promise<MongoClient> {
   }
 
   const client = new MongoClient(mongodbUri)
-  clientPromise = client.connect()
-  return clientPromise
+  // If the very first connect rejects (e.g. transient DNS failure on
+  // boot), we MUST drop the cached promise — otherwise every subsequent
+  // request keeps awaiting the same rejected promise and never recovers
+  // until the process is restarted.
+  const promise = client.connect().catch((err) => {
+    if (clientPromise === promise) {
+      clientPromise = null
+    }
+    throw err
+  })
+  clientPromise = promise
+  return promise
 }
 
 export async function getDb(): Promise<Db> {
