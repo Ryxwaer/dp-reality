@@ -7,15 +7,12 @@ Built as a microservices architecture for a Master's thesis at BUT FIT.
 
 ```
 services/
-  modules/           # Always-on gRPC BotModule servers (K8s Deployments)
-    bazos/           # Python — Bazos.cz module definition & config API
-    sreality/        # NestJS (TypeScript) — Sreality.cz module definition & config API
   jobs/              # Scraper jobs (scheduler in Phase 1, K8s CronJobs in Phase 2)
     bazos/           # Python — Bazos.cz HTML scraper
     sreality/        # NestJS (TypeScript) — Sreality.cz API scraper
+  module-sdk/        # Authoring scaffold + template for uploadable module bundles
   notification/      # Go — email notification consumer
   frontend/          # Nuxt 4 (TypeScript) — dashboard & BFF layer
-proto/               # Shared Protocol Buffer definitions (BotModule gRPC contract)
 ```
 
 ## Technology Stack
@@ -28,28 +25,30 @@ proto/               # Shared Protocol Buffer definitions (BotModule gRPC contra
 | Notification       | Go                        |
 | Database           | MongoDB                   |
 | Message broker     | RabbitMQ                  |
-| Inter-service RPC  | gRPC (Protocol Buffers)   |
 | Orchestration      | K3s (Phase 2+)            |
 
 ## Communication Patterns
 
 - **Synchronous**: Frontend ↔ MongoDB (user data, listings, bot configs)
-- **Asynchronous**: Scrapers → RabbitMQ (`scrape.completed`) → Notification Service
-- **gRPC**: Frontend BFF ↔ Bot Modules (ParseUrl, GetConfigSchema, GetOverview)
+- **Asynchronous**: Scrapers → RabbitMQ (`scrape.completed` / `bot.created`) → Notification Service
 
 ## Module Architecture
 
-Each scraper source is split into two containers:
+A *module* describes one content source (a website, an API). It has two
+deliverables:
 
-- **Module** (`services/modules/<source>/`): Always-on gRPC server implementing the
-  `BotModule` service. Handles URL parsing, config schema, and overview queries.
-  Self-registers in MongoDB `modules` collection at startup.
-- **Job** (`services/jobs/<source>/`): Scraper logic that fetches listings, persists to
-  MongoDB, and publishes `scrape.completed` events to RabbitMQ. Runs on a scheduler
-  in Phase 1; becomes a Kubernetes CronJob in Phase 2.
+- **Job** (`services/jobs/<source>/`): scraper logic that fetches listings,
+  persists them to MongoDB, and publishes `scrape.completed` events to
+  RabbitMQ. Runs on a scheduler in Phase 1; becomes a Kubernetes CronJob in
+  Phase 2.
+- **Bundle** (authored with `services/module-sdk/`): a single ES module
+  (`.mjs`) that exports a Vue component factory rendering the bot's
+  configuration UI. Uploaded through the dashboard and stored in the MongoDB
+  `modules` collection — see the **Modules (POC)** bullet under
+  [Frontend](#frontend-servicesfrontend) below for the runtime model.
 
-Adding a new source requires deploying one module and one job container —
-no changes to the frontend or any other service.
+Adding a new source means shipping one job container and uploading one bundle
+— no changes to the frontend or any other service.
 
 ## Frontend (`services/frontend/`)
 

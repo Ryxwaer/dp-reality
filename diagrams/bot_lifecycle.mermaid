@@ -1,0 +1,67 @@
+flowchart TB
+ subgraph Author["1. Module authoring"]
+        SDK["Developer scaffolds module<br>using services/module-sdk/<br>(Vue factory exporting saveBot UI)"]
+        Bundle["Build to single ES module .mjs<br>+ author config schema, matcher contract,<br>notification spec (subject/title/url/fields)"]
+  end
+ subgraph Register["2. Module registration"]
+        Upload["User submits POST /api/modules<br>{name, description, source, collection,<br>configSchema, notification, code}<br>(code is .mjs, &le;1 MB)"]
+        ModulesCol[("MongoDB modules collection<br>{name, source, collection,<br>configSchema, notification, code,<br>uploaded_by, timestamps}")]
+  end
+ subgraph Configure["3. User creates a bot"]
+        Browse["User opens /modules/:id/new<br>(or /bots/:id/edit to re-mount existing)"]
+        Load["Frontend GET /api/modules/:id/bundle.mjs<br>and dynamically imports it via Blob URL"]
+        Render["Module factory renders config UI<br>using host-injected Vue primitives<br>(h, ref, reactive, computed, watch, onMounted)<br>+ saveBot(payload) helper"]
+        Save["Module calls saveBot(payload)<br>POST /api/bots {module_id, name,<br>config, matcher, active,<br>email_notifications}"]
+        Validate["BFF: load module, validateBotConfig<br>against module.configSchema,<br>snapshot source/collection/notification<br>onto bot doc"]
+        BotDoc[("MongoDB users.bots[] entry<br>{id, module_id, name, source,<br>collection, config, matcher,<br>notification, status, email_notifications}")]
+  end
+ subgraph Welcome["4. Bot activation"]
+        BotCreated{{"RabbitMQ fanout bot.created<br>{user_id, bot_id, created_at}<br>(rolled back if publish fails)"}}
+        NotifierBC["Notifier processBotCreatedEvent:<br>FetchListingsBetween(bot.collection,<br>now-24h, now)<br>then specmatcher.Evaluate in memory"]
+        WelcomeMail["SendInitialDigest per bot<br>(welcome-only email when 0 matches)<br>sent only if email_notifications=true"]
+        WelcomeInbox["InsertNotifications:<br>one row per matched listing<br>(only if any matches)"]
+  end
+ subgraph Scrape["5. Continuous scraping"]
+        Cron["Job (APScheduler / NestJS):<br>scrape_cycle generates run_id = uuid4()<br>services/jobs/{bazos,sreality}"]
+        Listings[("MongoDB &lt;collection&gt;<br>upsert listings tagged with run_id<br>(returns new_count)")]
+        ScrapeDone{{"RabbitMQ fanout scrape.completed<br>{run_id, source, collection}<br>emitted only when new_count &gt; 0"}}
+  end
+ subgraph Deliver["6. Match and notify (per scrape.completed)"]
+        FetchUsers["FetchActiveUsersForScope(source, collection)"]
+        BotLoop["For each user, for each bot where<br>bot.IsActive() AND bot.source==event.source<br>AND bot.collection==event.collection"]
+        Compile["specmatcher.Compile(bot.matcher.filters)"]
+        Query["repo.FindBotMatches(collection, run_id, filter)<br>=&gt; query {run_id: event.run_id, ...filter}"]
+        Resolve["notify.Apply(bot.notification, listing)<br>resolves subject/title/url/fields per match"]
+        InboxRows[("MongoDB notifications rows<br>unique on (user_id, source, source_id)<br>also stores run_id, bot_id, fields, unread")]
+        Email["emailer.SendDigest, one mail per source<br>contains rows from every matched bot for that source<br>sent if any matched bot has email_notifications=true"]
+  end
+ subgraph Use["7. User consumption"]
+        Inbox["GET /api/notifications<br>+ /count and /:id/read<br>renders per-listing rows with unread flag"]
+        Mailbox["Email in user mailbox<br>unsubscribe link to /api/unsubscribe/:token"]
+  end
+
+    SDK --> Bundle
+    Bundle --> Upload
+    Upload --> ModulesCol
+    Browse --> Load --> Render --> Save --> Validate --> BotDoc
+
+    BotDoc -- "on Mongo write success" --> BotCreated
+    BotCreated --> NotifierBC
+    NotifierBC --> WelcomeMail
+    NotifierBC --> WelcomeInbox
+
+    Cron -- "upsert + count new" --> Listings
+    Cron -- "if new_count &gt; 0" --> ScrapeDone
+
+    ScrapeDone --> FetchUsers --> BotLoop --> Compile --> Query --> Resolve
+    Resolve --> InboxRows
+    Resolve --> Email
+
+    WelcomeInbox --> InboxRows
+    WelcomeMail --> Mailbox
+    InboxRows --> Inbox
+    Email --> Mailbox
+
+    BotDoc -. "active bots iterated by notifier" .-> BotLoop
+    BotDoc -. "user + bot looked up by id" .-> NotifierBC
+    ModulesCol -. "module_id reference + configSchema" .-> Validate

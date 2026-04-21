@@ -95,7 +95,6 @@ services:
         condition: service_healthy
     networks:
       - dp-reality
-      - nginx-proxy-manager_default
     restart: unless-stopped
 
 volumes:
@@ -105,5 +104,3 @@ networks:
   dp-reality:
     name: dp-reality
     driver: bridge
-  nginx-proxy-manager_default:
-    external: true
