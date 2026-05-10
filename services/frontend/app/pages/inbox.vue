@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { breakpointsTailwind } from '@vueuse/core'
-import type { NotificationDoc } from '~~/shared/types'
+import type { NotificationDoc, BotMeta, ModuleRegistryEntry } from '~~/shared/types'
 
 useHead({ title: 'Inbox' })
 
@@ -20,6 +20,33 @@ const { data: notifications, refresh } = await useFetch<NotificationDoc[]>(
   }
 )
 
+const { data: bots } = await useFetch<BotMeta[]>('/api/bots', {
+  default: () => [],
+  lazy: true
+})
+const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
+  '/api/modules/registry',
+  { default: () => ({ items: [] }), lazy: true }
+)
+
+// Map of config_id → display labels for the inbox rows. Service
+// display names come from the registry, bot names from /api/bots.
+const botLabels = computed(() => {
+  const serviceLabel = new Map<string, string>()
+  for (const r of registry.value?.items ?? []) {
+    serviceLabel.set(r.bot_id, r.display_name)
+  }
+  const out = new Map<string, { name: string, bot_id: string, serviceLabel: string }>()
+  for (const b of bots.value) {
+    out.set(b.config_id, {
+      name: b.name,
+      bot_id: b.bot_id,
+      serviceLabel: serviceLabel.get(b.bot_id) ?? b.bot_id
+    })
+  }
+  return out
+})
+
 const filteredNotifications = computed(() => {
   if (selectedTab.value === 'unread') {
     return notifications.value.filter(n => n.unread)
@@ -30,12 +57,8 @@ const filteredNotifications = computed(() => {
 const selected = ref<NotificationDoc | null>(null)
 
 const isPanelOpen = computed({
-  get() {
-    return !!selected.value
-  },
-  set(value: boolean) {
-    if (!value) selected.value = null
-  }
+  get() { return !!selected.value },
+  set(value: boolean) { if (!value) selected.value = null }
 })
 
 watch(filteredNotifications, () => {
@@ -67,6 +90,31 @@ async function onMarkAllRead() {
     toast.add({ title: 'Could not mark all read', color: 'error' })
   }
 }
+
+const selectedLabels = computed(() => {
+  if (!selected.value) return { service: '', name: '' }
+  const lab = botLabels.value.get(selected.value.config_id)
+  return {
+    service: lab?.serviceLabel ?? '',
+    name: lab?.name ?? ''
+  }
+})
+
+// SSE: subscribe to inbox.refresh hints. We re-fetch on each hint
+// (the stream payload is intentionally tiny — it doesn't carry rows).
+let source: EventSource | null = null
+onMounted(() => {
+  if (typeof EventSource === 'undefined') return
+  source = new EventSource('/api/sse/inbox')
+  source.addEventListener('inbox.refresh', () => { void refresh() })
+  source.onerror = () => {
+    // Browser will auto-reconnect; we don't surface transient errors.
+  }
+})
+onBeforeUnmount(() => {
+  source?.close()
+  source = null
+})
 
 const breakpoints = useBreakpoints(breakpointsTailwind)
 const isMobile = breakpoints.smaller('lg')
@@ -110,6 +158,7 @@ const isMobile = breakpoints.smaller('lg')
     <InboxList
       :notifications="filteredNotifications"
       :selected="selected"
+      :bot-labels="botLabels"
       @select="onSelect"
     />
   </UDashboardPanel>
@@ -117,6 +166,8 @@ const isMobile = breakpoints.smaller('lg')
   <InboxMail
     v-if="selected"
     :notification="selected"
+    :service-label="selectedLabels.service"
+    :bot-name="selectedLabels.name"
     @close="selected = null"
   />
   <div v-else class="hidden lg:flex flex-1 items-center justify-center">
@@ -129,6 +180,8 @@ const isMobile = breakpoints.smaller('lg')
         <InboxMail
           v-if="selected"
           :notification="selected"
+          :service-label="selectedLabels.service"
+          :bot-name="selectedLabels.name"
           @close="selected = null"
         />
       </template>

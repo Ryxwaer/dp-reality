@@ -1,9 +1,9 @@
 import { ObjectId } from 'mongodb'
-import { requireUserId } from '~~/server/utils/auth'
+import { requireUserIdHex } from '~~/server/utils/auth'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
-  const userId = await requireUserId(event)
+  const userId = await requireUserIdHex(event)
   const id = getRouterParam(event, 'id')
 
   if (!id || !ObjectId.isValid(id)) {

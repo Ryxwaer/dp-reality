@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatTimeAgo } from '@vueuse/core'
-import type { NotificationDoc } from '~~/shared/types'
+import type { NotificationDoc, BotMeta, ModuleRegistryEntry } from '~~/shared/types'
 
 defineEmits<{
   read: []
@@ -15,6 +15,27 @@ const { data: notifications, refresh } = await useFetch<NotificationDoc[]>(
     query: { filter: 'unread', limit: 50 }
   }
 )
+
+const { data: bots } = await useFetch<BotMeta[]>('/api/bots', {
+  default: () => [],
+  lazy: true
+})
+const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
+  '/api/modules/registry',
+  { default: () => ({ items: [] }), lazy: true }
+)
+
+const subtitle = computed(() => {
+  const serviceLabel = new Map<string, string>()
+  for (const r of registry.value?.items ?? []) {
+    serviceLabel.set(r.bot_id, r.display_name)
+  }
+  const out = new Map<string, string>()
+  for (const b of bots.value) {
+    out.set(b.config_id, `${serviceLabel.get(b.bot_id) ?? b.bot_id} · ${b.name}`)
+  }
+  return out
+})
 
 watch(isNotificationsSlideoverOpen, (open) => {
   if (open) refresh()
@@ -49,17 +70,14 @@ watch(isNotificationsSlideoverOpen, (open) => {
               </span>
 
               <time
-                :datetime="notification.matched_at"
+                :datetime="notification.created_at"
                 class="text-muted text-xs shrink-0"
-                v-text="formatTimeAgo(new Date(notification.matched_at))"
+                v-text="formatTimeAgo(new Date(notification.created_at))"
               />
             </p>
 
             <p class="text-dimmed truncate">
-              {{ notification.source }}<template
-                v-for="(f, i) in notification.fields"
-                :key="i"
-              > · {{ f.value }}</template>
+              {{ subtitle.get(notification.config_id) ?? 'unknown bot' }}
             </p>
           </div>
         </NuxtLink>

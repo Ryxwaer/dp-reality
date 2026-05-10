@@ -1,10 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-// Token format mirrors services/notification/internal/unsubscribe:
+// Token format mirrors services/email-notifier/internal/unsubscribe:
 //   <base64url(payload_json)>.<base64url(hmac_sha256)>
+//
+// Payload is just the user id + an issued-at + an expiry.
+// The bot list comes from the user document at click time, so there's
+// no per-bot or per-source claim baked into the token.
 export interface UnsubscribePayload {
   uid: string
-  src: string
+  iat: number
   exp: number
 }
 
@@ -20,18 +24,11 @@ function b64urlDecode(s: string): Buffer {
   return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/') + pad, 'base64')
 }
 
-export function signUnsubscribeToken(
-  payload: Omit<UnsubscribePayload, 'exp'> & { exp?: number },
-  secret: string
-): string {
+export function signUnsubscribeToken(uid: string, secret: string, ttlSeconds = DEFAULT_TTL_SECONDS): string {
   if (!secret) throw new Error('UNSUBSCRIBE_SECRET is not configured')
   const now = Math.floor(Date.now() / 1000)
-  const fullPayload: UnsubscribePayload = {
-    uid: payload.uid,
-    src: payload.src,
-    exp: payload.exp ?? (now + DEFAULT_TTL_SECONDS)
-  }
-  const body = b64url(JSON.stringify(fullPayload))
+  const payload: UnsubscribePayload = { uid, iat: now, exp: now + ttlSeconds }
+  const body = b64url(JSON.stringify(payload))
   const sig = b64url(createHmac('sha256', secret).update(body).digest())
   return `${body}.${sig}`
 }
@@ -64,16 +61,13 @@ export function verifyUnsubscribeToken(token: string, secret: string): VerifyRes
   try {
     const raw = b64urlDecode(body).toString('utf8')
     const parsed = JSON.parse(raw) as UnsubscribePayload
-    if (typeof parsed.uid !== 'string' || typeof parsed.src !== 'string' || typeof parsed.exp !== 'number') {
-      return { ok: false, reason: 'payload' }
+    if (typeof parsed.uid !== 'string') return { ok: false, reason: 'payload' }
+    if (parsed.exp !== undefined && parsed.exp < Math.floor(Date.now() / 1000)) {
+      return { ok: false, reason: 'expired' }
     }
     payload = parsed
   } catch {
     return { ok: false, reason: 'payload' }
-  }
-
-  if (payload.exp < Math.floor(Date.now() / 1000)) {
-    return { ok: false, reason: 'expired' }
   }
 
   return { ok: true, payload }

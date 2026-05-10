@@ -1,22 +1,28 @@
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
+import { findRegistryEntry } from '~~/server/utils/registry'
 import { verifyUnsubscribeToken } from '~~/server/utils/unsubscribe-token'
+import type { StoredBot } from '~~/server/utils/auth'
 
 const botUpdateSchema = z.object({
-  id: z.string().min(1).max(64),
+  config_id: z.string().min(1).max(64),
   email_notifications: z.boolean().optional(),
-  /** Only `active` and `stopped` are toggleable here — `deleted` must go through DELETE. */
   status: z.enum(['active', 'stopped']).optional()
 }).refine(
   v => v.email_notifications !== undefined || v.status !== undefined,
-  { message: 'Per-bot update must contain email_notifications or status' }
+  { message: 'Per-config update must contain email_notifications or status' }
 )
 
 const bodySchema = z.object({
   updates: z.array(botUpdateSchema).min(1).max(500)
 })
 
+// Companion of the GET above. Applies opt-out / pause selections to
+// users.bots[] and mirrors `status` flips into the owning bot's
+// <bot>_config.active. Sequential (bot first, BFF cache second) so the
+// matcher stops at least as early as the dashboard claims it has. No
+// auth here — the unsubscribe token is the proof of intent.
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, 'token')
   if (!token) {
@@ -45,11 +51,30 @@ export default defineEventHandler(async (event) => {
   const db = await getDb()
   const users = db.collection(COLLECTIONS.users)
 
-  // One updateOne per bot-id is safest: arrayFilters can only address
-  // one positional path per $set clause, but building fancy aggregation
-  // pipelines for what's at most a dozen rows isn't worth the risk.
+  const userDoc = await users.findOne(
+    { _id: userObjectID },
+    { projection: { bots: 1 } }
+  )
+  const botMap = new Map<string, StoredBot>()
+  for (const b of ((userDoc?.bots ?? []) as StoredBot[])) {
+    botMap.set(b.config_id, b)
+  }
+
   let applied = 0
   for (const u of body.updates) {
+    if (u.status !== undefined) {
+      const bot = botMap.get(u.config_id)
+      if (bot) {
+        const registry = await findRegistryEntry(bot.bot_id)
+        if (registry && registry.config_collection) {
+          await db.collection(registry.config_collection).updateOne(
+            { _id: u.config_id as never },
+            { $set: { active: u.status === 'active' } }
+          )
+        }
+      }
+    }
+
     const set: Record<string, unknown> = {}
     if (u.email_notifications !== undefined) {
       set['bots.$[bot].email_notifications'] = u.email_notifications
@@ -57,20 +82,11 @@ export default defineEventHandler(async (event) => {
     if (u.status !== undefined) {
       set['bots.$[bot].status'] = u.status
     }
-    const unset: Record<string, unknown> = {}
-    if (set['bots.$[bot].status'] !== undefined) {
-      unset['bots.$[bot].active'] = ''
-    }
-    const update: Record<string, unknown> = { $set: set }
-    if (Object.keys(unset).length > 0) {
-      update.$unset = unset
-    }
+
     const res = await users.updateOne(
       { _id: userObjectID },
-      update,
-      {
-        arrayFilters: [{ 'bot.id': u.id, 'bot.status': { $ne: 'deleted' } }]
-      }
+      { $set: set },
+      { arrayFilters: [{ 'bot.config_id': u.config_id, 'bot.status': { $ne: 'deleted' } }] }
     )
     applied += res.modifiedCount
   }

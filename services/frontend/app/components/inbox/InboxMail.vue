@@ -4,15 +4,18 @@ import type { NotificationDoc } from '~~/shared/types'
 
 const props = defineProps<{
   notification: NotificationDoc
+  serviceLabel: string
+  botName: string
 }>()
 
 defineEmits<{
   close: []
 }>()
 
-const infoRows = computed(() => [
-  { label: 'Source', value: props.notification.source },
-  ...(props.notification.fields ?? [])
+const meta = computed(() => [
+  { label: 'Bot', value: props.botName || '—' },
+  { label: 'Source', value: props.serviceLabel || '—' },
+  { label: 'Source ref', value: props.notification.source_ref || '—' }
 ])
 </script>
 
@@ -55,13 +58,13 @@ const infoRows = computed(() => [
             {{ notification.title }}
           </p>
           <p class="text-muted">
-            {{ notification.source }} · #{{ notification.source_id }}
+            {{ serviceLabel }}<span v-if="botName"> · {{ botName }}</span>
           </p>
         </div>
       </div>
 
       <p class="max-sm:pl-16 text-muted text-sm sm:mt-2">
-        Matched {{ format(new Date(notification.matched_at), 'dd MMM HH:mm') }}
+        Matched {{ format(new Date(notification.created_at), 'dd MMM HH:mm') }}
       </p>
     </div>
 
@@ -69,7 +72,7 @@ const infoRows = computed(() => [
       <UCard variant="subtle">
         <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
           <div
-            v-for="row in infoRows"
+            v-for="row in meta"
             :key="row.label"
             class="flex justify-between gap-4 border-b border-default last:border-b-0 pb-2 sm:border-b-0 sm:pb-0"
           >
@@ -82,6 +85,17 @@ const infoRows = computed(() => [
           </div>
         </dl>
       </UCard>
+
+      <!--
+        notification.html is sanitized server-side at read time
+        (server/utils/sanitize-html.ts). Bots produce inline-styled HTML
+        cards aimed at email clients; we render them as-is so the inbox
+        and the email digest look identical.
+      -->
+      <div
+        class="rounded-md border border-default p-4 bg-default"
+        v-html="notification.html"
+      />
 
       <UButton
         :to="notification.url"

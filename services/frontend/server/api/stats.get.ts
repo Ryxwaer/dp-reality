@@ -1,47 +1,39 @@
 import { requireUser } from '~~/server/utils/auth'
-import { getDb, getListingCollections, COLLECTIONS } from '~~/server/utils/db'
+import { getDb, COLLECTIONS } from '~~/server/utils/db'
+import type { StoredBot } from '~~/server/utils/auth'
 
 interface StatsResponse {
-  total_listings: number
-  new_last_24h: number
   active_bots: number
+  paused_bots: number
+  total_matches: number
   unread_matches: number
 }
 
+// Home dashboard stats. The BFF doesn't query bot-owned listing
+// collections (those are encapsulated by their bot service), so we
+// surface what we own: notification counts and the user's bot roster.
 export default defineEventHandler(async (event): Promise<StatsResponse> => {
   const user = await requireUser(event)
   const db = await getDb()
 
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-  const collections = await getListingCollections(db)
-
-  const listingCountPromises = collections.flatMap(name => [
-    db.collection(name).countDocuments({}),
-    db.collection(name).countDocuments({ first_seen: { $gte: oneDayAgo } })
+  // Bot services persist `user_id` as a hex string into `notifications`,
+  // so query that collection by the same string form rather than the
+  // canonical ObjectId stored on the user document itself.
+  const userIdHex = user._id.toHexString()
+  const [totalMatches, unreadMatches] = await Promise.all([
+    db.collection(COLLECTIONS.notifications).countDocuments({ user_id: userIdHex }),
+    db.collection(COLLECTIONS.notifications).countDocuments({ user_id: userIdHex, unread: true })
   ])
 
-  const [listingCounts, unreadMatches] = await Promise.all([
-    Promise.all(listingCountPromises),
-    db.collection(COLLECTIONS.notifications).countDocuments({
-      user_id: user._id,
-      unread: true
-    })
-  ])
-
-  let totalListings = 0
-  let newLast24h = 0
-  for (let i = 0; i < listingCounts.length; i += 2) {
-    totalListings += listingCounts[i] ?? 0
-    newLast24h += listingCounts[i + 1] ?? 0
-  }
-
-  const bots = (user.bots ?? []) as Array<{ status?: string, active?: boolean }>
-  const activeBots = bots.filter(b => (b?.status ?? (b?.active ? 'active' : 'stopped')) === 'active').length
+  const bots = (user.bots ?? []) as StoredBot[]
+  const live = bots.filter(b => b.status !== 'deleted')
+  const active = live.filter(b => (b.status ?? 'active') === 'active').length
+  const paused = live.filter(b => b.status === 'stopped').length
 
   return {
-    total_listings: totalListings,
-    new_last_24h: newLast24h,
-    active_bots: activeBots,
+    active_bots: active,
+    paused_bots: paused,
+    total_matches: totalMatches,
     unread_matches: unreadMatches
   }
 })

@@ -1,38 +1,151 @@
 services:
   rabbitmq:
+    container_name: dp-reality-rabbitmq
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
-  job-bazos:
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/jobs/bazos/src
-          target: /app
-        - action: rebuild
-          path: ./services/jobs/bazos/requirements.txt
-
-  job-sreality:
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/jobs/sreality/src
-          target: /app
-        - action: rebuild
-          path: ./services/jobs/sreality/requirements.txt
-
-  notification:
+  bot-bazos:
+    container_name: dp-reality-bot-bazos
+    build:
+      context: .
+      dockerfile: services/bot-bazos/Dockerfile
+    pull_policy: build
+    image: dp-reality-bot-bazos:latest
     environment:
-      APP_BASE_URL: http://localhost:3000
+      MONGODB_URI: ${MONGODB_URI}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # SERVICE_ID is the platform-wide `bot_id` advertised in
+      # module_registry. It MUST match this compose service name (and
+      # the equivalent k8s Service name in production) so peers can
+      # reach the bot at http://<bot_id>:port via DNS, and so the BFF
+      # reverse-proxies /modules/<bot_id>/* against the right host.
+      SERVICE_ID: bot-bazos
+      DISPLAY_NAME: Bazos.cz
+      # base_url is what the BFF reverse-proxies /modules/bot-bazos/* to.
+      # The frontend container reaches this via the dp-reality bridge
+      # network, so the docker DNS name is enough — no published port.
+      BASE_URL: http://bot-bazos:8000
+      SCRAPE_INTERVAL_MINUTES: 5
+      SCRAPE_PAGES: 5
+    ports:
+      - "8001:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/bot-bazos/src
+          target: /app/src
+        - action: rebuild
+          path: ./services/bot-bazos/requirements.txt
+
+  bot-sreality:
+    container_name: dp-reality-bot-sreality
+    build:
+      context: .
+      dockerfile: services/bot-sreality/Dockerfile
+    pull_policy: build
+    image: dp-reality-bot-sreality:latest
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # See bot-bazos above: SERVICE_ID == compose service name == k8s
+      # Service name == module_registry.bot_id == path slug under
+      # /modules/<bot_id>/* on the BFF.
+      SERVICE_ID: bot-sreality
+      DISPLAY_NAME: Sreality.cz
+      BASE_URL: http://bot-sreality:8000
+      SCRAPE_INTERVAL_MINUTES: 10
+    ports:
+      - "8002:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dp-reality
+    restart: unless-stopped
     develop:
       watch:
         - action: rebuild
-          path: ./services/notification
+          path: ./services/bot-sreality/src
+        - action: rebuild
+          path: ./services/bot-sreality/package.json
+
+  email-notifier:
+    container_name: dp-reality-email-notifier
+    build:
+      context: .
+      dockerfile: services/email-notifier/Dockerfile
+    pull_policy: build
+    image: dp-reality-email-notifier:latest
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # Local dev hits our own docker-mailserver on the minisforum
+      # box directly (submission port, STARTTLS, PLAIN auth). This
+      # avoids burning Mailgun quota for development traffic. Because
+      # our MTA is not warmed up for arbitrary outbound mail, the
+      # MAIL_ALLOWED_RECIPIENT_DOMAINS allow-list below ensures we
+      # only ever attempt local-domain delivery in dev.
+      MAIL_SMTP_SERVER: mail.ryxwaer.com
+      MAIL_SMTP_PORT: 587
+      MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
+      MAIL_FROM_EMAIL: bot@ryxwaer.com
+      MAIL_ALLOWED_RECIPIENT_DOMAINS: ryxwaer.com
+      # Unsubscribe links in dev emails point at the locally-exposed BFF.
+      APP_BASE_URL: http://localhost:3000
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/email-notifier
 
   frontend:
+    container_name: dp-reality-frontend
+    build:
+      context: .
+      dockerfile: services/frontend/Dockerfile
+    pull_policy: build
+    image: dp-reality-frontend:latest
+    environment:
+      NUXT_MONGODB_URI: ${MONGODB_URI}
+      NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD}
     ports:
       - "3000:3000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dp-reality
+    restart: unless-stopped
     develop:
       watch:
         - action: sync
@@ -45,7 +158,10 @@ services:
         - action: rebuild
           path: ./services/frontend/package.json
 
+volumes:
+  rabbitmq_data:
+
 networks:
-  nginx-proxy-manager_default:
-    external: false
+  dp-reality:
+    name: dp-reality
     driver: bridge

@@ -9,7 +9,6 @@ const _useDashboard = () => {
     'g-h': () => router.push('/'),
     'g-i': () => router.push('/inbox'),
     'g-b': () => router.push('/bots'),
-    'g-m': () => router.push('/modules'),
     'g-s': () => router.push('/settings'),
     'n': () => isNotificationsSlideoverOpen.value = !isNotificationsSlideoverOpen.value
   })

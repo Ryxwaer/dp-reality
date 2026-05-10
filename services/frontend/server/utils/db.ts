@@ -35,13 +35,14 @@ export async function getDb(): Promise<Db> {
   return client.db()
 }
 
+// Cross-cutting collections owned by the BFF + the platform contract.
+// Per-source listings_<source> and <source>_config collections are
+// owned by their respective bot services and are never touched here.
+// (`<source>` is the bot service's chosen short slug — e.g. "bazos",
+// "sreality" — independent of `bot_id` in module_registry, which is
+// the deployment-level service identifier.)
 export const COLLECTIONS = {
   users: 'users',
   notifications: 'notifications',
-  modules: 'modules'
+  moduleRegistry: 'module_registry'
 } as const
-
-export async function getListingCollections(db: Db): Promise<string[]> {
-  const names = await db.collection(COLLECTIONS.modules).distinct('collection') as string[]
-  return names.filter(n => typeof n === 'string' && n.length > 0)
-}

@@ -4,27 +4,15 @@ import type { TableColumn } from '@nuxt/ui'
 import type { Row } from '@tanstack/table-core'
 import { getPaginationRowModel } from '@tanstack/table-core'
 import { format } from 'date-fns'
-import type { BotConfig } from '~~/shared/types'
+import type { BotMeta, ModuleRegistryEntry } from '~~/shared/types'
 
 useHead({ title: 'Bots' })
-
-interface ModuleListItem {
-  id: string
-  name: string
-  description: string
-  uploaded_by: string
-  uploaded_by_name: string
-  created_at: string
-  updated_at: string
-  is_own: boolean
-}
 
 const UBadge = resolveComponent('UBadge')
 const UButton = resolveComponent('UButton')
 const UDropdownMenu = resolveComponent('UDropdownMenu')
 const UIcon = resolveComponent('UIcon')
 
-const router = useRouter()
 const toast = useToast()
 const table = useTemplateRef('table')
 
@@ -32,37 +20,54 @@ const columnFilters = ref([{ id: 'name', value: '' }])
 const columnVisibility = ref()
 const rowSelection = ref({})
 
-const { data: bots, status, refresh } = await useFetch<BotConfig[]>('/api/bots', {
+const { data: bots, status, refresh } = await useFetch<BotMeta[]>('/api/bots', {
   default: () => [],
   lazy: true
 })
 
-const { data: modules } = await useFetch<ModuleListItem[]>('/api/modules', {
-  default: () => [],
-  lazy: true
+const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
+  '/api/modules/registry',
+  { default: () => ({ items: [] }), lazy: true }
+)
+
+const serviceLabel = computed(() => {
+  const m = new Map<string, string>()
+  for (const r of registry.value?.items ?? []) m.set(r.bot_id, r.display_name)
+  return m
 })
 
-const moduleNameById = computed(() => {
-  const map = new Map<string, string>()
-  for (const m of modules.value) {
-    map.set(m.id, m.name)
+// The picker now lives on /store (a full marketplace page) so this
+// dashboard only manages already-minted bots. configBot holds the bot
+// whose iframe-hosted configurator is currently mounted, alongside the
+// matching registry entry the dialog needs for the iframe src.
+const configBot = ref<BotMeta | null>(null)
+const configRegistry = ref<ModuleRegistryEntry | null>(null)
+
+function openEdit(bot: BotMeta) {
+  const entry = (registry.value?.items ?? []).find(e => e.bot_id === bot.bot_id)
+  if (!entry) {
+    toast.add({ title: 'Bot service is offline', color: 'error' })
+    return
   }
-  return map
-})
+  configBot.value = bot
+  configRegistry.value = entry
+}
 
-async function patchBot(bot: BotConfig, patch: Partial<Pick<BotConfig, 'status' | 'email_notifications'>>) {
+function closeConfig() {
+  configBot.value = null
+  configRegistry.value = null
+}
+
+async function patchBot(bot: BotMeta, patch: Partial<Pick<BotMeta, 'status' | 'email_notifications'>>) {
   try {
-    await $fetch(`/api/bots/${bot.id}`, {
-      method: 'PATCH',
-      body: patch
-    })
+    await $fetch(`/api/bots/${bot.config_id}`, { method: 'PATCH', body: patch })
     await refresh()
   } catch {
     toast.add({ title: 'Could not update bot', color: 'error' })
   }
 }
 
-async function toggleStatus(bot: BotConfig) {
+async function toggleStatus(bot: BotMeta) {
   const next = bot.status === 'active' ? 'stopped' : 'active'
   await patchBot(bot, { status: next })
   toast.add({
@@ -71,7 +76,7 @@ async function toggleStatus(bot: BotConfig) {
   })
 }
 
-async function toggleEmail(bot: BotConfig) {
+async function toggleEmail(bot: BotMeta) {
   const next = !bot.email_notifications
   await patchBot(bot, { email_notifications: next })
   toast.add({
@@ -80,9 +85,9 @@ async function toggleEmail(bot: BotConfig) {
   })
 }
 
-async function deleteBot(bot: BotConfig) {
+async function deleteBot(bot: BotMeta) {
   try {
-    await $fetch(`/api/bots/${bot.id}`, { method: 'DELETE' })
+    await $fetch(`/api/bots/${bot.config_id}`, { method: 'DELETE' })
     await refresh()
     toast.add({ title: 'Bot deleted', color: 'success' })
   } catch {
@@ -90,39 +95,31 @@ async function deleteBot(bot: BotConfig) {
   }
 }
 
-function getRowItems(row: Row<BotConfig>) {
+function getRowItems(row: Row<BotMeta>) {
   const bot = row.original
-  const moduleKnown = moduleNameById.value.has(bot.module_id)
   return [
     { type: 'label' as const, label: 'Actions' },
     {
-      label: 'Edit bot',
+      label: 'Edit config',
       icon: 'i-lucide-pencil',
-      disabled: !moduleKnown,
-      onSelect() {
-        router.push(`/bots/${bot.id}/edit`)
-      }
+      onSelect() { openEdit(bot) }
     },
     {
       label: bot.status === 'active' ? 'Pause bot' : 'Resume bot',
       icon: bot.status === 'active' ? 'i-lucide-pause' : 'i-lucide-play',
-      onSelect() {
-        toggleStatus(bot)
-      }
+      onSelect() { void toggleStatus(bot) }
     },
     {
       label: bot.email_notifications ? 'Disable emails' : 'Enable emails',
       icon: bot.email_notifications ? 'i-lucide-bell-off' : 'i-lucide-bell',
-      onSelect() {
-        toggleEmail(bot)
-      }
+      onSelect() { void toggleEmail(bot) }
     },
     {
-      label: 'Copy bot ID',
+      label: 'Copy config ID',
       icon: 'i-lucide-copy',
       onSelect() {
-        navigator.clipboard.writeText(bot.id)
-        toast.add({ title: 'Copied to clipboard', description: 'Bot ID copied.' })
+        navigator.clipboard.writeText(bot.config_id)
+        toast.add({ title: 'Copied to clipboard', description: 'Config ID copied.' })
       }
     },
     { type: 'separator' as const },
@@ -130,30 +127,21 @@ function getRowItems(row: Row<BotConfig>) {
       label: 'Delete bot',
       icon: 'i-lucide-trash',
       color: 'error' as const,
-      onSelect() {
-        deleteBot(bot)
-      }
+      onSelect() { void deleteBot(bot) }
     }
   ]
 }
 
-const columns: TableColumn<BotConfig>[] = [
+const columns: TableColumn<BotMeta>[] = [
   { accessorKey: 'name', header: 'Name' },
   {
-    id: 'module',
-    header: 'Module',
-    cell: ({ row }) => {
-      const name = moduleNameById.value.get(row.original.module_id)
-      if (name) return name
-      return h('span', { class: 'text-xs text-muted italic' }, 'unavailable')
-    }
-  },
-  {
-    accessorKey: 'source',
-    header: 'Source',
-    cell: ({ row }) => row.original.source
-      ? h(UBadge, { variant: 'subtle', color: 'neutral' }, () => row.original.source)
-      : h('span', { class: 'text-xs text-muted italic' }, '—')
+    accessorKey: 'bot_id',
+    header: 'Service',
+    cell: ({ row }) => h(
+      UBadge,
+      { variant: 'subtle', color: 'neutral' },
+      () => serviceLabel.value.get(row.original.bot_id) ?? row.original.bot_id
+    )
   },
   {
     accessorKey: 'status',
@@ -191,13 +179,6 @@ const columns: TableColumn<BotConfig>[] = [
       : '—'
   },
   {
-    accessorKey: 'expires_at',
-    header: 'Expires',
-    cell: ({ row }) => row.original.expires_at
-      ? format(new Date(row.original.expires_at), 'dd MMM yyyy')
-      : '—'
-  },
-  {
     id: 'actions',
     cell: ({ row }) => h(
       'div',
@@ -225,6 +206,19 @@ const nameFilter = computed({
 })
 
 const pagination = ref({ pageIndex: 0, pageSize: 10 })
+
+function onConfigSaved() {
+  refresh()
+  closeConfig()
+  toast.add({ title: 'Bot saved', color: 'success' })
+}
+
+function onConfigCancelled() {
+  // The dialog cleans up provisional bots on cancel; refresh the list
+  // so the deleted row disappears from the table immediately.
+  refresh()
+  closeConfig()
+}
 </script>
 
 <template>
@@ -239,7 +233,7 @@ const pagination = ref({ pageIndex: 0, pageSize: 10 })
           <UButton
             label="New bot"
             icon="i-lucide-plus"
-            to="/modules"
+            to="/store"
           />
         </template>
       </UDashboardNavbar>
@@ -294,6 +288,19 @@ const pagination = ref({ pageIndex: 0, pageSize: 10 })
           />
         </div>
       </div>
+
+      <ClientOnly>
+        <BotsBotConfigDialog
+          v-if="configBot && configRegistry"
+          :open="!!configBot"
+          :bot="configBot"
+          :registry="configRegistry"
+          :is-new="false"
+          @update:open="(v) => !v && closeConfig()"
+          @saved="onConfigSaved"
+          @cancelled="onConfigCancelled"
+        />
+      </ClientOnly>
     </template>
   </UDashboardPanel>
 </template>

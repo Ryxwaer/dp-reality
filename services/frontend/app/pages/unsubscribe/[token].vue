@@ -15,34 +15,30 @@ const { data: summary, error, pending } = await useFetch<UnsubscribeSummary>(
 )
 
 interface BotChoice {
-  id: string
+  config_id: string
   name: string
-  source_label: string
-  module_name: string | null
+  bot_id: string
   disable_email: boolean
   stop_bot: boolean
   initial_email: boolean
   initial_status: 'active' | 'stopped'
 }
 
-const sameSourceChoices = ref<BotChoice[]>([])
-const otherSourceGroups = ref<Array<{
-  source_key: string
-  source_label: string
+interface ServiceGroupView {
+  bot_id: string
+  display_name: string
   expanded: boolean
   bots: BotChoice[]
-}>>([])
+}
 
-function toChoice(b: UnsubscribeBot, preselectEmailOff: boolean): BotChoice {
+const groups = ref<ServiceGroupView[]>([])
+
+function toChoice(b: UnsubscribeBot): BotChoice {
   return {
-    id: b.id,
+    config_id: b.config_id,
     name: b.name,
-    source_label: b.source_label,
-    module_name: b.module_name,
-    // Preselect "disable email" only for same-source bots whose emails
-    // are currently on. If emails are already off, showing it as
-    // unchecked lets the user *re-enable* via the same form.
-    disable_email: preselectEmailOff ? b.email_notifications : false,
+    bot_id: b.bot_id,
+    disable_email: false,
     stop_bot: false,
     initial_email: b.email_notifications,
     initial_status: b.status
@@ -51,51 +47,41 @@ function toChoice(b: UnsubscribeBot, preselectEmailOff: boolean): BotChoice {
 
 watch(summary, (s) => {
   if (!s) return
-  sameSourceChoices.value = s.same_source.map(b => toChoice(b, true))
-  otherSourceGroups.value = s.other_sources.map(g => ({
-    source_key: g.source_key,
-    source_label: g.source_label,
-    expanded: false,
-    bots: g.bots.map(b => toChoice(b, false))
+  groups.value = s.groups.map(g => ({
+    bot_id: g.bot_id,
+    display_name: g.display_name,
+    expanded: true,
+    bots: g.bots.map(toChoice)
   }))
 }, { immediate: true })
 
 const submitting = ref(false)
 const done = ref(false)
 
-const totalOtherBots = computed(() =>
-  otherSourceGroups.value.reduce((sum, g) => sum + g.bots.length, 0)
+const totalBots = computed(() => groups.value.reduce((sum, g) => sum + g.bots.length, 0))
+
+const nothingSelected = computed(() =>
+  !groups.value.some(g => g.bots.some(b => b.disable_email || b.stop_bot))
 )
 
-const nothingSelected = computed(() => {
-  const anySame = sameSourceChoices.value.some(c => c.disable_email || c.stop_bot)
-  const anyOther = otherSourceGroups.value.some(g =>
-    g.bots.some(c => c.disable_email || c.stop_bot)
-  )
-  return !anySame && !anyOther
-})
-
-function collectUpdates(): Array<{ id: string, email_notifications?: boolean, status?: 'active' | 'stopped' }> {
-  const out: Array<{ id: string, email_notifications?: boolean, status?: 'active' | 'stopped' }> = []
-  const visit = (c: BotChoice) => {
-    const patch: { id: string, email_notifications?: boolean, status?: 'active' | 'stopped' } = { id: c.id }
-    let dirty = false
-    // `disable_email` true means user wants emails off; unchecked
-    // means user wants them on. Only emit a write when this actually
-    // flips the current state.
-    const wantEmail = !c.disable_email
-    if (wantEmail !== c.initial_email) {
-      patch.email_notifications = wantEmail
-      dirty = true
+function collectUpdates(): Array<{ config_id: string, email_notifications?: boolean, status?: 'active' | 'stopped' }> {
+  const out: Array<{ config_id: string, email_notifications?: boolean, status?: 'active' | 'stopped' }> = []
+  for (const g of groups.value) {
+    for (const c of g.bots) {
+      const patch: { config_id: string, email_notifications?: boolean, status?: 'active' | 'stopped' } = { config_id: c.config_id }
+      let dirty = false
+      const wantEmail = !c.disable_email
+      if (wantEmail !== c.initial_email) {
+        patch.email_notifications = wantEmail
+        dirty = true
+      }
+      if (c.stop_bot && c.initial_status !== 'stopped') {
+        patch.status = 'stopped'
+        dirty = true
+      }
+      if (dirty) out.push(patch)
     }
-    if (c.stop_bot && c.initial_status !== 'stopped') {
-      patch.status = 'stopped'
-      dirty = true
-    }
-    if (dirty) out.push(patch)
   }
-  sameSourceChoices.value.forEach(visit)
-  otherSourceGroups.value.forEach(g => g.bots.forEach(visit))
   return out
 }
 
@@ -144,7 +130,7 @@ async function submit() {
               Email preferences
             </h1>
             <p v-if="summary" class="text-sm text-muted">
-              Signed in as {{ summary.email }} — managing <strong>{{ summary.source_label }}</strong> emails.
+              Signed in as {{ summary.email }} — {{ totalBots }} bot{{ totalBots === 1 ? '' : 's' }}.
             </p>
           </div>
         </div>
@@ -166,17 +152,30 @@ async function submit() {
       </div>
 
       <div v-else-if="summary" class="flex flex-col gap-6">
-        <section>
-          <h2 class="text-sm font-semibold mb-2">
-            Bots for {{ summary.source_label }}
-          </h2>
-          <div v-if="sameSourceChoices.length === 0" class="text-sm text-muted">
-            You have no active bots for this source.
-          </div>
-          <ul v-else class="flex flex-col gap-2">
+        <div v-if="totalBots === 0" class="text-sm text-muted">
+          You have no active bots.
+        </div>
+
+        <section
+          v-for="group in groups"
+          :key="group.bot_id"
+          class="rounded-md border border-default"
+        >
+          <button
+            type="button"
+            class="w-full flex items-center justify-between p-3 text-sm font-medium hover:bg-elevated/40"
+            @click="group.expanded = !group.expanded"
+          >
+            <span>{{ group.display_name }} ({{ group.bots.length }})</span>
+            <UIcon
+              :name="group.expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              class="size-4"
+            />
+          </button>
+          <ul v-if="group.expanded" class="flex flex-col gap-2 p-3 border-t border-default">
             <li
-              v-for="bot in sameSourceChoices"
-              :key="bot.id"
+              v-for="bot in group.bots"
+              :key="bot.config_id"
               class="rounded-md border border-default p-3"
             >
               <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -184,8 +183,9 @@ async function submit() {
                   <p class="text-sm font-medium truncate">
                     {{ bot.name }}
                   </p>
-                  <p class="text-xs text-muted truncate">
-                    {{ bot.module_name ?? bot.source_label }}
+                  <p class="text-xs text-muted">
+                    {{ bot.initial_status === 'stopped' ? 'Currently paused' : 'Currently running' }}
+                    · emails {{ bot.initial_email ? 'on' : 'off' }}
                   </p>
                 </div>
                 <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm shrink-0">
@@ -195,53 +195,6 @@ async function submit() {
               </div>
             </li>
           </ul>
-        </section>
-
-        <section v-if="totalOtherBots > 0">
-          <h2 class="text-sm font-semibold mb-2">
-            Other bots <span class="text-muted font-normal">({{ totalOtherBots }})</span>
-          </h2>
-          <div class="flex flex-col gap-2">
-            <div
-              v-for="group in otherSourceGroups"
-              :key="group.source_key"
-              class="rounded-md border border-default"
-            >
-              <button
-                type="button"
-                class="w-full flex items-center justify-between p-3 text-sm font-medium hover:bg-elevated/40"
-                @click="group.expanded = !group.expanded"
-              >
-                <span>{{ group.source_label }} ({{ group.bots.length }})</span>
-                <UIcon
-                  :name="group.expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                  class="size-4"
-                />
-              </button>
-              <ul v-if="group.expanded" class="flex flex-col gap-2 p-3 border-t border-default">
-                <li
-                  v-for="bot in group.bots"
-                  :key="bot.id"
-                  class="rounded-md border border-default p-3"
-                >
-                  <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div class="min-w-0">
-                      <p class="text-sm font-medium truncate">
-                        {{ bot.name }}
-                      </p>
-                      <p class="text-xs text-muted truncate">
-                        {{ bot.module_name ?? bot.source_label }}
-                      </p>
-                    </div>
-                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm shrink-0">
-                      <UCheckbox v-model="bot.disable_email" label="Disable emails" />
-                      <UCheckbox v-model="bot.stop_bot" label="Stop bot" />
-                    </div>
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </div>
         </section>
 
         <div class="flex items-center justify-end gap-2 pt-2 border-t border-default">

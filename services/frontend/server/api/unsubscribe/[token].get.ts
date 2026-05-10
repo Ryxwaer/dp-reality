@@ -1,39 +1,33 @@
 import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
-import { shapeBot, type RawBot } from '~~/server/utils/bot-shape'
+import { listRegistry } from '~~/server/utils/registry'
+import { shapeBot } from '~~/server/utils/bot-shape'
 import { verifyUnsubscribeToken } from '~~/server/utils/unsubscribe-token'
-import { sourceLabel } from '~~/shared/source'
+import type { StoredBot } from '~~/server/utils/auth'
 
 export interface UnsubscribeBot {
-  id: string
+  config_id: string
   name: string
-  module_id: string
-  module_name: string | null
-  source_key: string
-  source_label: string
+  bot_id: string
   status: 'active' | 'stopped'
   email_notifications: boolean
 }
 
+export interface UnsubscribeServiceGroup {
+  bot_id: string
+  display_name: string
+  bots: UnsubscribeBot[]
+}
+
 export interface UnsubscribeSummary {
   email: string
-  source_key: string
-  source_label: string
-  same_source: UnsubscribeBot[]
-  other_sources: Array<{
-    source_key: string
-    source_label: string
-    bots: UnsubscribeBot[]
-  }>
+  groups: UnsubscribeServiceGroup[]
 }
 
-interface ModuleDocRow {
-  _id: ObjectId
-  name?: string
-  source?: string
-  collection?: string
-}
-
+// Token only carries the user id. We list every active bot owned by
+// that user, grouped by their owning service. The email recipient
+// picks per-bot what to silence — no per-token source filter, no
+// module joins.
 export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => {
   const token = getRouterParam(event, 'token')
   if (!token) {
@@ -48,7 +42,7 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
       statusMessage: `Unsubscribe link is ${reason === 'expired' ? 'expired' : 'invalid'}`
     })
   }
-  const { uid, src } = verified.payload
+  const { uid } = verified.payload
 
   if (!ObjectId.isValid(uid)) {
     throw createError({ statusCode: 400, statusMessage: 'Bad token payload' })
@@ -63,61 +57,37 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
     throw createError({ statusCode: 404, statusMessage: 'Account not found' })
   }
 
-  const rawBots = ((user.bots ?? []) as RawBot[]).map(shapeBot)
-    .filter(b => b.status !== 'deleted') as Array<ReturnType<typeof shapeBot>>
+  const bots = ((user.bots ?? []) as StoredBot[])
+    .map(shapeBot)
+    .filter(b => b.status !== 'deleted')
 
-  const moduleIds = Array.from(new Set(rawBots.map(b => b.module_id).filter(v => ObjectId.isValid(v))))
-  const moduleDocs = moduleIds.length === 0
-    ? []
-    : await db.collection<ModuleDocRow>(COLLECTIONS.modules).find(
-        { _id: { $in: moduleIds.map(id => new ObjectId(id)) } },
-        { projection: { name: 1, source: 1, collection: 1 } }
-      ).toArray()
+  const registry = await listRegistry()
+  const displayName = new Map<string, string>()
+  for (const r of registry) displayName.set(r.bot_id, r.display_name)
 
-  const moduleByID = new Map<string, ModuleDocRow>()
-  for (const m of moduleDocs) {
-    moduleByID.set(m._id.toHexString(), m)
+  const groupMap = new Map<string, UnsubscribeBot[]>()
+  for (const b of bots) {
+    const bucket = groupMap.get(b.bot_id) ?? []
+    bucket.push({
+      config_id: b.config_id,
+      name: b.name,
+      bot_id: b.bot_id,
+      status: b.status === 'active' ? 'active' : 'stopped',
+      email_notifications: b.email_notifications
+    })
+    groupMap.set(b.bot_id, bucket)
   }
 
-  const summarise = (bot: ReturnType<typeof shapeBot>): UnsubscribeBot => {
-    const mod = moduleByID.get(bot.module_id)
-    const key = bot.source || mod?.source || mod?.collection || 'unknown'
-    return {
-      id: bot.id,
-      name: bot.name,
-      module_id: bot.module_id,
-      module_name: mod?.name ?? null,
-      source_key: key,
-      source_label: sourceLabel(key),
-      status: bot.status === 'active' ? 'active' : 'stopped',
-      email_notifications: bot.email_notifications
-    }
-  }
-
-  const summaries = rawBots.map(summarise)
-
-  const same = summaries.filter(b => b.source_key === src)
-  const others = summaries.filter(b => b.source_key !== src)
-
-  const grouped = new Map<string, UnsubscribeBot[]>()
-  for (const b of others) {
-    const bucket = grouped.get(b.source_key) ?? []
-    bucket.push(b)
-    grouped.set(b.source_key, bucket)
-  }
-  const other_sources = [...grouped.entries()]
-    .map(([key, bots]) => ({
-      source_key: key,
-      source_label: sourceLabel(key),
-      bots
+  const groups: UnsubscribeServiceGroup[] = [...groupMap.entries()]
+    .map(([botId, items]) => ({
+      bot_id: botId,
+      display_name: displayName.get(botId) ?? botId,
+      bots: items
     }))
-    .sort((a, b) => a.source_label.localeCompare(b.source_label))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
 
   return {
     email: user.email as string,
-    source_key: src,
-    source_label: sourceLabel(src),
-    same_source: same,
-    other_sources
+    groups
   }
 })

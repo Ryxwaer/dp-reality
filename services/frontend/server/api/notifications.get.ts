@@ -1,8 +1,9 @@
 import type { ObjectId, Document } from 'mongodb'
 import { z } from 'zod'
-import { requireUserId } from '~~/server/utils/auth'
+import { requireUserIdHex } from '~~/server/utils/auth'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
-import type { NotificationField } from '~~/shared/types'
+import { sanitizeNotificationHtml } from '~~/server/utils/sanitize-html'
+import type { NotificationDoc } from '~~/shared/types'
 
 const querySchema = z.object({
   filter: z.enum(['all', 'unread']).default('all'),
@@ -12,51 +13,47 @@ const querySchema = z.object({
 
 interface NotificationRow extends Document {
   _id: ObjectId
-  user_id: ObjectId
-  bot_id?: string
-  // Always a string post-migration: sha256 hex (sreality) or ObjectID hex
-  // (legacy bazos / pre-migration sreality, normalized by the notifier).
-  listing_id?: string
-  source: string
-  source_id: string
-  run_id?: string
+  user_id: string
+  config_id: string
+  source_ref: string
   title: string
   url: string
-  fields?: NotificationField[]
-  matched_at: Date
+  html: string
+  created_at: Date
   unread: boolean
+  sent_at?: Date | null
 }
 
-export default defineEventHandler(async (event) => {
-  const userId = await requireUserId(event)
+// The `html` field is composed by the bot service. We re-sanitize it
+// here at read time as defence in depth — the inbox UI v-html's the
+// result, and this is the boundary between server-trusted markup and
+// the browser. Sanitization rules live in server/utils/sanitize-html.
+export default defineEventHandler(async (event): Promise<NotificationDoc[]> => {
+  const userId = await requireUserIdHex(event)
   const query = await getValidatedQuery(event, querySchema.parse)
 
   const db = await getDb()
   const filter: Record<string, unknown> = { user_id: userId }
-  if (query.filter === 'unread') {
-    filter.unread = true
-  }
+  if (query.filter === 'unread') filter.unread = true
 
   const docs = await db
     .collection<NotificationRow>(COLLECTIONS.notifications)
     .find(filter)
-    .sort({ matched_at: -1 })
+    .sort({ created_at: -1 })
     .skip(query.offset)
     .limit(query.limit)
     .toArray()
 
   return docs.map(d => ({
     id: d._id.toHexString(),
-    user_id: d.user_id.toHexString(),
-    bot_id: d.bot_id ?? '',
-    listing_id: d.listing_id ?? '',
-    source: d.source,
-    source_id: d.source_id,
-    run_id: d.run_id ?? '',
-    title: d.title,
-    url: d.url,
-    fields: d.fields ?? [],
-    matched_at: d.matched_at.toISOString(),
-    unread: !!d.unread
+    user_id: d.user_id ?? '',
+    config_id: d.config_id ?? '',
+    source_ref: d.source_ref ?? '',
+    title: d.title ?? '',
+    url: d.url ?? '',
+    html: sanitizeNotificationHtml(d.html),
+    created_at: d.created_at.toISOString(),
+    unread: !!d.unread,
+    sent_at: d.sent_at ? d.sent_at.toISOString() : null
   }))
 })

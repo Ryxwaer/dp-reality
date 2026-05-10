@@ -1,54 +1,27 @@
-import type { BotConfig, BotStatus, ModuleMatcher, NotificationSpec } from '~~/shared/types'
+import type { BotMeta, BotStatus } from '~~/shared/types'
 import { BOT_STATUSES } from '~~/shared/types'
+import type { StoredBot } from './auth'
 
-// Raw bot document as stored in users.bots[]. `active?` is legacy.
-export interface RawBot {
-  id: string
-  module_id?: string
-  name: string
-  source?: string
-  collection?: string
-  config?: Record<string, unknown>
-  matcher?: ModuleMatcher
-  notification?: NotificationSpec
-  status?: string
-  email_notifications?: boolean
-  /** Legacy — only read as fallback when `status` is missing. */
-  active?: boolean
-  expires_at?: Date | string | null
-  created_at?: Date | string | null
-}
-
-export function toBotStatus(raw: RawBot): BotStatus {
+function toStatus(raw: StoredBot): BotStatus {
   if (raw.status && (BOT_STATUSES as readonly string[]).includes(raw.status)) {
     return raw.status as BotStatus
   }
-  if (raw.active === true) return 'active'
-  if (raw.active === false) return 'stopped'
   return 'active'
 }
 
-const EMPTY_MATCHER: ModuleMatcher = { filters: [] }
-const EMPTY_NOTIFICATION: NotificationSpec = {
-  subject: '',
-  title: '',
-  url: '',
-  fields: []
+function toIso(value: Date | string | null | undefined): string | null {
+  if (!value) return null
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
-export function shapeBot(raw: RawBot): BotConfig {
+// Normalise an entry from users.bots[] into the BFF/wire shape.
+export function shapeBot(raw: StoredBot): BotMeta {
   return {
-    id: raw.id,
-    module_id: raw.module_id ?? '',
+    config_id: raw.config_id,
+    bot_id: raw.bot_id,
     name: raw.name,
-    source: raw.source ?? '',
-    collection: raw.collection ?? '',
-    config: raw.config ?? {},
-    matcher: raw.matcher ?? EMPTY_MATCHER,
-    notification: raw.notification ?? EMPTY_NOTIFICATION,
-    status: toBotStatus(raw),
+    status: toStatus(raw),
     email_notifications: raw.email_notifications ?? true,
-    expires_at: raw.expires_at ? new Date(raw.expires_at).toISOString() : null,
-    created_at: raw.created_at ? new Date(raw.created_at).toISOString() : ''
+    created_at: toIso(raw.created_at) ?? ''
   }
 }

@@ -2,9 +2,16 @@
 import { format, isToday } from 'date-fns'
 import type { NotificationDoc } from '~~/shared/types'
 
+interface BotLabels {
+  name: string
+  bot_id: string
+  serviceLabel: string
+}
+
 const props = defineProps<{
   notifications: NotificationDoc[]
   selected: NotificationDoc | null
+  botLabels: Map<string, BotLabels>
 }>()
 
 const emit = defineEmits<{
@@ -38,9 +45,12 @@ defineShortcuts({
   }
 })
 
-function summaryLine(n: NotificationDoc): string {
-  const first = n.fields?.[0]
-  return first ? first.value : ''
+function badgeFor(n: NotificationDoc): string {
+  return props.botLabels.get(n.config_id)?.serviceLabel ?? 'unknown'
+}
+
+function botNameFor(n: NotificationDoc): string {
+  return props.botLabels.get(n.config_id)?.name ?? ''
 }
 </script>
 
@@ -67,7 +77,7 @@ function summaryLine(n: NotificationDoc): string {
         >
           <div class="flex items-center gap-3 min-w-0">
             <UBadge
-              :label="notification.source"
+              :label="badgeFor(notification)"
               variant="subtle"
               color="neutral"
               size="sm"
@@ -77,21 +87,21 @@ function summaryLine(n: NotificationDoc): string {
           </div>
 
           <time
-            :datetime="notification.matched_at"
+            :datetime="notification.created_at"
             class="shrink-0 text-xs text-muted"
           >
             {{
-              isToday(new Date(notification.matched_at))
-                ? format(new Date(notification.matched_at), 'HH:mm')
-                : format(new Date(notification.matched_at), 'dd MMM')
+              isToday(new Date(notification.created_at))
+                ? format(new Date(notification.created_at), 'HH:mm')
+                : format(new Date(notification.created_at), 'dd MMM')
             }}
           </time>
         </div>
         <p class="truncate mt-1" :class="[notification.unread && 'font-semibold']">
           {{ notification.title }}
         </p>
-        <p v-if="summaryLine(notification)" class="text-dimmed line-clamp-1">
-          {{ summaryLine(notification) }}
+        <p v-if="botNameFor(notification)" class="text-dimmed line-clamp-1">
+          {{ botNameFor(notification) }}
         </p>
       </div>
     </div>

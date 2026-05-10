@@ -2,36 +2,36 @@
 import type { Stat } from '~~/shared/types'
 
 interface StatsPayload {
-  total_listings: number
-  new_last_24h: number
   active_bots: number
+  paused_bots: number
+  total_matches: number
   unread_matches: number
 }
 
 const { data } = await useFetch<StatsPayload>('/api/stats', {
   default: () => ({
-    total_listings: 0,
-    new_last_24h: 0,
     active_bots: 0,
+    paused_bots: 0,
+    total_matches: 0,
     unread_matches: 0
   })
 })
 
 const stats = computed<Stat[]>(() => [
   {
-    title: 'Total listings',
-    icon: 'i-lucide-database',
-    value: data.value.total_listings.toLocaleString()
-  },
-  {
-    title: 'New (24h)',
-    icon: 'i-lucide-sparkles',
-    value: data.value.new_last_24h.toLocaleString()
-  },
-  {
     title: 'Active bots',
     icon: 'i-lucide-bot',
     value: data.value.active_bots.toLocaleString()
+  },
+  {
+    title: 'Paused bots',
+    icon: 'i-lucide-pause',
+    value: data.value.paused_bots.toLocaleString()
+  },
+  {
+    title: 'Total matches',
+    icon: 'i-lucide-database',
+    value: data.value.total_matches.toLocaleString()
   },
   {
     title: 'Unread matches',
@@ -41,9 +41,9 @@ const stats = computed<Stat[]>(() => [
 ])
 
 const TILE_TO: Record<string, string> = {
-  'Total listings': '/inbox',
-  'New (24h)': '/inbox',
   'Active bots': '/bots',
+  'Paused bots': '/bots',
+  'Total matches': '/inbox',
   'Unread matches': '/inbox?filter=unread'
 }
 </script>

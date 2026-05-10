@@ -43,9 +43,9 @@ const links = computed(() => [[{
     open.value = false
   }
 }, {
-  label: 'Modules',
-  icon: 'i-lucide-puzzle',
-  to: '/modules',
+  label: 'Store',
+  icon: 'i-lucide-store',
+  to: '/store',
   onSelect: () => {
     open.value = false
   }

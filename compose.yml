@@ -16,16 +16,27 @@ services:
       timeout: 10s
       retries: 5
 
-  job-bazos:
-    container_name: dp-reality-job-bazos
+  bot-bazos:
+    container_name: dp-reality-bot-bazos
     build:
       context: .
-      dockerfile: services/jobs/bazos/Dockerfile
+      dockerfile: services/bot-bazos/Dockerfile
     pull_policy: build
-    image: dp-reality-job-bazos:latest
+    image: dp-reality-bot-bazos:latest
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # SERVICE_ID is the platform-wide `bot_id` advertised in
+      # module_registry. It MUST match this compose service name (and
+      # the equivalent k8s Service name in production) so peers can
+      # reach the bot at http://<bot_id>:port via DNS, and so the BFF
+      # reverse-proxies /modules/<bot_id>/* against the right host.
+      SERVICE_ID: bot-bazos
+      DISPLAY_NAME: Bazos.cz
+      # base_url is what the BFF reverse-proxies /modules/bot-bazos/* to.
+      # The frontend container reaches this via the dp-reality bridge
+      # network, so the docker DNS name is enough — no published port.
+      BASE_URL: http://bot-bazos:8000
       SCRAPE_INTERVAL_MINUTES: 5
       SCRAPE_PAGES: 5
     depends_on:
@@ -35,16 +46,22 @@ services:
       - dp-reality
     restart: unless-stopped
 
-  job-sreality:
-    container_name: dp-reality-job-sreality
+  bot-sreality:
+    container_name: dp-reality-bot-sreality
     build:
       context: .
-      dockerfile: services/jobs/sreality/Dockerfile
+      dockerfile: services/bot-sreality/Dockerfile
     pull_policy: build
-    image: dp-reality-job-sreality:latest
+    image: dp-reality-bot-sreality:latest
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # See bot-bazos above: SERVICE_ID == compose service name == k8s
+      # Service name == module_registry.bot_id == path slug under
+      # /modules/<bot_id>/* on the BFF.
+      SERVICE_ID: bot-sreality
+      DISPLAY_NAME: Sreality.cz
+      BASE_URL: http://bot-sreality:8000
       SCRAPE_INTERVAL_MINUTES: 10
     depends_on:
       rabbitmq:
@@ -53,13 +70,13 @@ services:
       - dp-reality
     restart: unless-stopped
 
-  notification:
-    container_name: dp-reality-notification
+  email-notifier:
+    container_name: dp-reality-email-notifier
     build:
       context: .
-      dockerfile: services/notification/Dockerfile
+      dockerfile: services/email-notifier/Dockerfile
     pull_policy: build
-    image: dp-reality-notification:latest
+    image: dp-reality-email-notifier:latest
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
@@ -69,7 +86,6 @@ services:
       MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
       MAIL_FROM_EMAIL: noreply@ryxwaer.com
       APP_BASE_URL: https://reality.ryxwaer.com
-      BATCH_WINDOW_SECONDS: 300
       UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
     depends_on:
       rabbitmq:
