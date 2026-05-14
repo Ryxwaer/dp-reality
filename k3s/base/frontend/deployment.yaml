@@ -8,7 +8,12 @@ metadata:
     app.kubernetes.io/component: bff
     app.kubernetes.io/name: frontend
 spec:
-  replicas: 1
+  # `replicas` is deliberately omitted: Flagger scales this Deployment
+  # to 0 once it has cloned the spec into `frontend-primary`, and
+  # bumps it back to 1 during canary analysis. Keeping the field out
+  # of the manifest avoids a Flux↔Flagger tug-of-war over the
+  # `spec.replicas` setter (Kustomize SSA only claims fields present
+  # in the manifest, so Flagger owns this one).
   selector:
     matchLabels:
       app.kubernetes.io/name: frontend

@@ -1,0 +1,84 @@
+# Flagger Canary: progressive delivery for the BFF.
+#
+# When Flux applies a new image tag to `frontend` Deployment, Flagger
+# clones the Deployment into a `frontend-canary` Deployment with the
+# new image, leaves `frontend-primary` (the previously-known-good
+# spec) untouched, then progressively shifts traffic from primary to
+# canary in 10 % steps over 10 iterations. Each step Flagger queries
+# Prometheus for the canary's HTTP-5xx rate and P95 latency; if
+# either breaches the threshold the canary is aborted and primary
+# keeps 100 % of traffic.
+#
+# Once analysis succeeds, Flagger promotes the canary spec into
+# primary (a deployment-update for `frontend-primary`) and scales
+# `frontend-canary` to zero. Net effect: a bad image never gets more
+# than 10 % of traffic for ~30 s before being rolled back.
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: frontend
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bff
+    app.kubernetes.io/name: frontend
+spec:
+  provider: nginx
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  ingressRef:
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    name: frontend
+  progressDeadlineSeconds: 600
+  service:
+    port: 3000
+    targetPort: 3000
+  analysis:
+    interval: 30s
+    threshold: 5         # consecutive metric failures before abort
+    maxWeight: 50        # never send more than 50 % to canary; the
+                         # primary stays warm so rollback is instant
+    stepWeight: 10
+    metrics:
+      - name: request-success-rate
+        # Built-in Flagger template (provided by the chart's
+        # MetricTemplate CRs). Computes
+        # `sum(rate(nginx_ingress_controller_requests{status!~"5.."}[1m])) /
+        #  sum(rate(nginx_ingress_controller_requests[1m])) * 100`
+        # scoped to the canary's ingress host. Must stay >= 99 %.
+        thresholdRange:
+          min: 99
+        interval: 1m
+      - name: request-duration
+        # P99 latency in milliseconds across the same time window.
+        # Must stay <= 500 ms.
+        thresholdRange:
+          max: 500
+        interval: 30s
+    webhooks:
+      # Pre-rollout smoke probe: Flagger asks the loadtester to curl
+      # `/api/healthz` against the canary service before opening the
+      # gate. If this fails, the canary is aborted before any user
+      # traffic touches it.
+      - name: smoke
+        type: pre-rollout
+        url: http://flagger-loadtester.flagger-system/
+        timeout: 30s
+        metadata:
+          type: bash
+          cmd: "curl -sf -m 5 http://frontend-canary.dp-reality:3000/api/healthz"
+      # Continuous synthetic load against the canary during each
+      # analysis step. Keeps `nginx_ingress_controller_requests`
+      # populated even if real user traffic is sparse, otherwise the
+      # success-rate metric is undefined and Flagger holds the
+      # canary at the previous step forever.
+      - name: load-test
+        type: rollout
+        url: http://flagger-loadtester.flagger-system/
+        timeout: 5s
+        metadata:
+          type: cmd
+          cmd: "hey -z 1m -q 5 -c 2 -host reality.ryxwaer.com http://ingress-nginx-controller.ingress-nginx/api/healthz"
