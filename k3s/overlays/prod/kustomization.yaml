@@ -14,10 +14,10 @@ resources:
 # with a sortable `main-<sha8>-<epoch>` tag.
 images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-bazos
-    newTag: main-b84d15b8-1778791857 # {"$imagepolicy": "flux-system:bot-bazos:tag"}
+    newTag: main-de738697-1778791898 # {"$imagepolicy": "flux-system:bot-bazos:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
     newTag: main-b84d15b8-1778791856 # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
-    newTag: main-ca3cdefc-1778788880 # {"$imagepolicy": "flux-system:email-notifier:tag"}
+    newTag: main-de738697-1778791898 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
-    newTag: main-b84d15b8-1778791860 # {"$imagepolicy": "flux-system:frontend:tag"}
+    newTag: main-de738697-1778791905 # {"$imagepolicy": "flux-system:frontend:tag"}
