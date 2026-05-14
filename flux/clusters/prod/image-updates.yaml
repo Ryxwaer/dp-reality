@@ -22,11 +22,12 @@ spec:
       author:
         email: fluxcdbot@users.noreply.github.com
         name: fluxcdbot
+      # Flux v2.8 removed `.Updated`; use `.Changed.Changes` instead.
       messageTemplate: |
         chore(images): bump image tags
 
-        {{ range $image, $_ := .Updated.Images -}}
-        - {{ $image }}
+        {{ range .Changed.Changes -}}
+        - {{ .OldValue }} -> {{ .NewValue }}
         {{ end -}}
     push:
       branch: main
