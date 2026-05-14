@@ -1,0 +1,16 @@
+# SOPS encryption rules for this repository.
+#
+# Any YAML under `k3s/base/secrets/` is auto-encrypted by `sops` using
+# the public age key below. The corresponding private key lives only
+# in the cluster (`flux-system/sops-age`), so the repo can be public
+# and the Secrets stay confidential.
+#
+# Edit workflow:
+#   sops k3s/base/secrets/frontend.yaml   # opens decrypted in $EDITOR
+#
+# Adding a new Secret: write the plaintext file under k3s/base/secrets/,
+# then `sops --encrypt --in-place k3s/base/secrets/<name>.yaml`.
+creation_rules:
+  - path_regex: k3s/base/secrets/.*\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1ngv4hv04nvrlec92f6dwjxz3hrg5ythxdvwwcdjujnwezlth6ycsnahv7e

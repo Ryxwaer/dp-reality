@@ -23,3 +23,12 @@ spec:
   # reverts it within the interval. The targetNamespace below is what
   # `kubectl apply -k` would print as the effective namespace.
   targetNamespace: dp-reality
+  # SOPS decryption (TODO/deployment/08). The age private key lives in
+  # `flux-system/sops-age` (created out-of-band by the operator,
+  # see k3s/runbook.md Phase 3); the public half is in `.sops.yaml`
+  # at repo root. Secrets under `k3s/base/secrets/` are decrypted in
+  # memory by the kustomize-controller and never written to disk.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

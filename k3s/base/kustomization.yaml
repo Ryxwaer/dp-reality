@@ -11,11 +11,16 @@ resources:
   - configmaps/email-notifier.yaml
   - configmaps/frontend.yaml
 
-  # Secrets are deliberately NOT managed by Kustomize / Flux. The
-  # `k3s/runbook.md` step 4 (and Phase 2 §2.4) populates them
-  # imperatively with `kubectl create secret …` so real credentials
-  # never live in Git. Phase 3 (TODO/deployment/08-sealed-secrets-or-sops)
-  # will reintroduce them as SOPS-encrypted manifests.
+  # SOPS-encrypted Secrets (cf. .sops.yaml at repo root). The Flux
+  # Kustomization in flux/clusters/prod/apps.yaml carries the
+  # `spec.decryption` block that points to the in-cluster age private
+  # key, so these files are decrypted at apply time.
+  - secrets/bot-bazos.yaml
+  - secrets/bot-sreality.yaml
+  - secrets/email-notifier.yaml
+  - secrets/frontend.yaml
+  - secrets/rabbitmq.yaml
+  - secrets/mongodb.yaml
 
   - rabbitmq/statefulset.yaml
   - rabbitmq/service.yaml

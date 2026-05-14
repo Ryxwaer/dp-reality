@@ -201,18 +201,22 @@ kubectl apply -k k3s/overlays/prod
 
 This creates the `dp-reality` namespace, every ConfigMap, the MongoDB
 and RabbitMQ StatefulSets, all four service Deployments, and the
-NetworkPolicies. **No Secret resources** — those are operator-created
-in step 4 below. The Deployments stay in `ContainerCreating` until
-step 4 completes (the kubelet waits for the named Secrets to exist).
+NetworkPolicies. On a fresh cluster the Deployments stay in
+`ContainerCreating` until step 4 completes (the kubelet waits for the
+named Secrets to exist).
 
-## 4. Create the operator-managed Secrets
+After Phase 3 (SOPS) is bootstrapped, `k3s/base/secrets/*.yaml` are
+applied automatically by Flux (decrypted in-memory by the
+kustomize-controller using the cluster age key); step 4 is then a
+one-shot initial-population step only.
 
-Secrets are deliberately NOT in `k3s/base/secrets/` (and not committed
-to Git in any form until Phase 3 / SOPS) so real credentials never
-appear in the repo. The operator creates them imperatively here. They
-also carry `kustomize.toolkit.fluxcd.io/{prune,reconcile}=disabled`
-annotations so Flux (Phase 2) doesn't try to drift-correct them
-against an absent manifest:
+## 4. Seed Secret values
+
+On a brand-new cluster the encrypted manifests in `k3s/base/secrets/`
+need real values. Generate them once with the snippet below, then
+encrypt with `sops` and commit (Phase 3 §3.3 has the editing
+workflow). On an existing cluster these Secrets are already present
+and Flux maintains them — you can skip this section.
 
 ```bash
 # RabbitMQ admin credentials (any strong values; bots will use them).
@@ -276,21 +280,10 @@ new env is picked up:
 kubectl -n dp-reality rollout restart deploy/bot-bazos deploy/bot-sreality deploy/email-notifier deploy/frontend
 ```
 
-Finally, tell Flux to leave these Secrets alone forever:
-
-```bash
-for s in bot-bazos bot-sreality email-notifier frontend rabbitmq mongodb; do
-  kubectl -n dp-reality annotate secret "$s" \
-    kustomize.toolkit.fluxcd.io/prune=disabled \
-    kustomize.toolkit.fluxcd.io/reconcile=disabled \
-    --overwrite
-done
-```
-
-`reconcile=disabled` tells the Flux kustomize-controller to skip these
-resources on every reconcile (no drift correction); `prune=disabled`
-tells it not to garbage-collect them even though no manifest in Git
-references them.
+Once the cluster is happy, dump each Secret back to a plaintext
+manifest under `k3s/base/secrets/<name>.yaml`, encrypt it with `sops
+--encrypt --in-place …` (per Phase 3), and commit. From that point on
+Flux is the sole owner of these Secrets.
 
 ## 5. Initialise the MongoDB replica set
 
@@ -527,9 +520,91 @@ an immediate sync.
   on the BFF. Requires session-state in MongoDB (`TODO/security/01`)
   so multiple BFF replicas can share login state.
 
-## Phase 3 (later) — SOPS + CronJobs
+## Phase 3 — SOPS encryption of Secrets at rest
 
-- `.sops.yaml` + per-Secret SOPS encryption.
+After this phase the GitOps repo can be public without leaking
+credentials. Per thesis §3.7.2.
+
+### 3.1 What gets installed
+
+- `sops` and `age` on the operator workstation (already in the repo
+  Read-me list of CLIs).
+- A single cluster-wide age key:
+  - **Public half** → committed in `.sops.yaml` at the repo root.
+  - **Private half** → lives in-cluster as
+    `flux-system/sops-age` (Secret), never committed anywhere.
+- `flux/clusters/prod/apps.yaml` gains a `spec.decryption` block
+  pointing at the in-cluster age key.
+- `k3s/base/secrets/*.yaml` come back into Git, SOPS-encrypted.
+- `.github/workflows/build-and-push.yml` gets a `secrets-lint` job
+  that fails the CI if a Secret manifest is committed without SOPS.
+
+### 3.2 One-off bootstrap
+
+```bash
+# Operator workstation — generate the age key pair.
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/dp-reality.agekey
+PUBLIC_KEY=$(grep -oE 'age1[a-z0-9]+' ~/.config/sops/age/dp-reality.agekey | tail -1)
+echo "$PUBLIC_KEY"
+
+# Publish public half in .sops.yaml at repo root (commit it).
+
+# Install private half into the cluster.
+kubectl -n flux-system create secret generic sops-age \
+  --from-file=age.agekey=$HOME/.config/sops/age/dp-reality.agekey \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Back up the private key to a password manager or offline storage.
+```
+
+The `flux-system/sops-age` Secret is the master key for the cluster:
+losing it means re-encrypting every committed Secret with a new key.
+Keep a copy off-line.
+
+### 3.3 Editing a Secret
+
+```bash
+export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/dp-reality.agekey
+
+# Opens decrypted in $EDITOR, re-encrypts on save:
+sops k3s/base/secrets/frontend.yaml
+
+# Or as a one-off:
+sops --decrypt k3s/base/secrets/frontend.yaml
+```
+
+Commit and push the new ciphertext. Flux picks it up within the
+5-minute reconcile and rolls the consuming Deployments
+(because the env-var hash changes).
+
+### 3.4 Adding a new Secret
+
+```bash
+cat > k3s/base/secrets/new-thing.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: new-thing
+  namespace: dp-reality
+type: Opaque
+stringData:
+  TOKEN: "<plaintext>"
+EOF
+
+sops --encrypt --in-place k3s/base/secrets/new-thing.yaml
+```
+
+Then add the file to `k3s/base/kustomization.yaml`.
+
+### 3.5 Rotating a leaked Secret
+
+Same as 3.3 — open with `sops`, set a new value, save, commit, push.
+The kustomize-controller applies the new ciphertext, K8s mutates the
+Secret, and the env-var checksum change rolls the consuming pods.
+
+## Phase 3 (deferred) — CronJobs
+
 - Daily `sweep-expired-bots` CronJob (FR-02-B).
 - Provisional-bots janitor moved from the Nitro process to a CronJob.
 
