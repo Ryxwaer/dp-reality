@@ -31,6 +31,12 @@ spec:
           envFrom:
             - configMapRef: { name: frontend }
             - secretRef:    { name: frontend }
+          env:
+            # Smoke-test marker so a no-op deploy triggers a Flagger
+            # canary (any change to spec.template triggers analysis).
+            # Safe to leave in place; the BFF ignores unknown env vars.
+            - name: CANARY_SMOKE_TEST
+              value: "phase-b-bootstrap"
           ports:
             - { name: http, containerPort: 3000 }
           readinessProbe:
