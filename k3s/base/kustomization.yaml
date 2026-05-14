@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dp-reality
+
+resources:
+  - namespace.yaml
+
+  - configmaps/bot-bazos.yaml
+  - configmaps/bot-sreality.yaml
+  - configmaps/email-notifier.yaml
+  - configmaps/frontend.yaml
+
+  - secrets/bot-bazos.yaml
+  - secrets/bot-sreality.yaml
+  - secrets/email-notifier.yaml
+  - secrets/frontend.yaml
+  - secrets/rabbitmq.yaml
+  - secrets/mongodb.yaml
+
+  - rabbitmq/statefulset.yaml
+  - rabbitmq/service.yaml
+
+  - mongodb/statefulset.yaml
+  - mongodb/service.yaml
+
+  - bot-bazos/deployment.yaml
+  - bot-bazos/service.yaml
+
+  - bot-sreality/deployment.yaml
+  - bot-sreality/service.yaml
+
+  - email-notifier/deployment.yaml
+
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+
+  - networkpolicies/default-deny.yaml
+  - networkpolicies/allow-dns.yaml
+  - networkpolicies/frontend.yaml
+  - networkpolicies/bots.yaml
+  - networkpolicies/email-notifier.yaml
+  - networkpolicies/rabbitmq.yaml
+  - networkpolicies/mongodb.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: dp-reality

@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq
+  namespace: dp-reality
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [bot, bff, notifier]
+      ports:
+        - { protocol: TCP, port: 5672 }
+  # RabbitMQ on a single replica does not originate cluster traffic
+  # in phase 1. DNS via the shared allow-dns policy is sufficient.
+  egress: []

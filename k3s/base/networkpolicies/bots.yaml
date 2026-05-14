@@ -1,0 +1,43 @@
+# Common policy for every bot service: ingress from the BFF (for
+# /modules/<bot_id>/* reverse-proxied iframe traffic), egress to
+# RabbitMQ + MongoDB + the external target portal on 443. Matches by
+# the shared `component: bot` label so adding new bot services is one
+# label, zero policy changes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bots
+  namespace: dp-reality
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: bot
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: frontend } }
+      ports:
+        - { protocol: TCP, port: 8000 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: rabbitmq } }
+      ports:
+        - { protocol: TCP, port: 5672 }
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: mongodb } }
+      ports:
+        - { protocol: TCP, port: 27017 }
+    # External portal scraping. The thesis (§3.7.1) does not pin a
+    # CIDR; opening 443 to the world matches the existing host-level
+    # firewall posture. If a bot ever needs a portal-specific allow
+    # list, narrow this per-bot.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }

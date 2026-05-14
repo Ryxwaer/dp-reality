@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-bazos
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-bazos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bot-bazos
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dp-reality
+        app.kubernetes.io/component: bot
+        app.kubernetes.io/name: bot-bazos
+    spec:
+      containers:
+        - name: bot-bazos
+          image: ghcr.io/ryxwaer/dp-reality/bot-bazos:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef: { name: bot-bazos }
+            - secretRef:    { name: bot-bazos }
+          ports:
+            - { name: http, containerPort: 8000 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 30

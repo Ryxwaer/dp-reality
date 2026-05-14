@@ -9,7 +9,7 @@ covers how to actually run the stack.
 
 ```bash
 cp .env.example .env
-docker compose -f compose.dev.yml up --build
+docker compose -f compose.dev.yml up --build --watch
 ```
 
 `compose.dev.yml` is a **standalone** dev stack — do not merge it with
@@ -18,27 +18,45 @@ bridge network (no `nginx-proxy-manager` needed locally), points the
 mailer at the dev SMTP server, and enables `docker compose watch`
 live-reload blocks. `compose.yml` is reserved for production.
 
+The frontend is built from `services/frontend/Dockerfile.dev` (single
+stage, runs `nuxt dev` with Vite HMR) so edits under `services/frontend/`
+are synced into the container by `--watch` and hot-reload in the
+browser — no rebuild needed. `package.json` / `pnpm-lock.yaml` changes
+trigger a rebuild. The Python bots use `sync+restart` / `rebuild`
+actions; see their `develop.watch` blocks for specifics.
+
 - Dashboard: http://localhost:3000
 - RabbitMQ management: http://localhost:15672
 
 MongoDB is **not** spun up by the stack; point `MONGODB_URI` at an
 external instance.
 
-## Production deploy (Portainer on Fedora CoreOS)
+## Production deploy (K3s on Fedora CoreOS)
 
-Stack type: **Repository**. Portainer clones the repo, reads
-`compose.yml`, and injects stack variables. Host prerequisites:
+The production target per thesis §3.4–3.5 is a K3s cluster. Phase 1
+ships a **single-node** install on `server.ryxwaer.com` that coexists
+with the existing `nginx-proxy-manager` Docker stack on the same
+host. NPM keeps owning TLS and reverse-proxies
+`reality.ryxwaer.com` to a `NodePort` Service inside the cluster.
 
-1. An `nginx-proxy-manager` stack is already running and has created
-   the `nginx-proxy-manager_default` network. The frontend attaches to
-   that network so NPM can proxy to `dp-reality-frontend:3000` by
-   container DNS — no host ports are published by this stack.
-2. Portainer stack variables (or a host-side `.env` next to
-   `compose.yml`) provide every `${VAR}` the compose file references —
-   see `.env.example` for the full list. Non-secret tuning (SMTP host,
-   from-address, scrape intervals) is baked into `compose.yml`.
-3. External MongoDB is reachable from the host.
+- Manifests: `k3s/base/` + `k3s/overlays/prod/`.
+- Operator runbook: [`k3s/runbook.md`](k3s/runbook.md).
+- MongoDB lives inside the cluster as a single-member replica set
+  (`dp-rs`); it is independent of any external Mongo the host may
+  already run.
+- NetworkPolicies enforce the inter-pod allow-list from thesis
+  §3.7.1; they require `kube-router` (see runbook step 2) because
+  K3s default Flannel does not enforce them.
 
-SELinux on CoreOS is a non-issue here: the stack uses only named
-volumes (no host bind mounts), so the Docker daemon handles labeling
-and the `:z`/`:Z` mount suffixes aren't needed.
+The RPi5 second node, full Flux CD GitOps + multi-arch CI, SOPS for
+secrets at rest, and the periodic CronJobs are deferred to phases 2
+and 3 of the deployment migration (see
+[`TODO/deployment/`](TODO/deployment/)).
+
+### Legacy Portainer / `compose.yml` deploy
+
+`compose.yml` is the previous production target (Portainer Stack on
+Fedora CoreOS, NPM-proxied container DNS) and remains runnable; it
+will be retired once the K3s deployment is verified. Until then both
+stacks can coexist on the same host (the K3s frontend is on
+NodePort 30080; the Docker frontend is reached by container DNS).

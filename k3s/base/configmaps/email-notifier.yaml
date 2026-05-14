@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: email-notifier
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: notifier
+    app.kubernetes.io/name: email-notifier
+data:
+  MAIL_SMTP_SERVER: smtp.eu.mailgun.org
+  MAIL_SMTP_PORT: "587"
+  MAIL_FROM_EMAIL: noreply@ryxwaer.com
+  APP_BASE_URL: https://reality.ryxwaer.com

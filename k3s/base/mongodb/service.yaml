@@ -1,0 +1,18 @@
+# Headless Service for the MongoDB StatefulSet. clusterIP: None makes
+# `mongodb-0.mongodb` resolve to the pod IP, which is the stable name
+# the replica-set members refer to one another by.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: db
+    app.kubernetes.io/name: mongodb
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: mongodb
+  ports:
+    - { name: mongo, port: 27017, targetPort: 27017, protocol: TCP }

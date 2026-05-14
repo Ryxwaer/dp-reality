@@ -1,5 +1,0 @@
-vpn-auth: "name=tailscale,joinKey=<TSKEY_AUTH>"
-tls-san:
-  - "$(hostname)"
-  - "100.93.242.42"
-node-external-ip: "100.93.242.42"

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-bazos
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-bazos
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: bot-bazos
+  ports:
+    - { name: http, port: 8000, targetPort: 8000, protocol: TCP }

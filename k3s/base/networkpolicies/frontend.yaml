@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend
+  namespace: dp-reality
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes: [Ingress, Egress]
+  # Ingress: NodePort traffic enters via host network and kube-proxy
+  # rewrites the dest IP to the pod's IP. kube-router treats this as
+  # ingress from the node's address space, which is covered by the
+  # implicit allow-from-host-network rule. We add an explicit
+  # in-cluster allow from the kube-system Traefik replacement
+  # (currently nothing — Traefik is disabled in phase 1) so the
+  # policy remains correct when phase 2 reintroduces an Ingress.
+  ingress:
+    - from:
+        - ipBlock:
+            # Allow all source IPs reaching the pod. NodePort traffic
+            # from NPM arrives via kube-proxy and the source IP is
+            # SNAT'd; constraining further would break the prod path.
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 3000 }
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [bot-bazos, bot-sreality]
+      ports:
+        - { protocol: TCP, port: 8000 }
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: rabbitmq } }
+      ports:
+        - { protocol: TCP, port: 5672 }
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: mongodb } }
+      ports:
+        - { protocol: TCP, port: 27017 }

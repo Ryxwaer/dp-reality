@@ -1,0 +1,32 @@
+# email-notifier has no HTTP server — it consumes notify.bot.processed
+# and notify.bot.welcome and sends SMTP. There is no readiness/liveness
+# HTTP endpoint; rely on the kubelet's restartPolicy + AMQP-consumer
+# crash-on-error semantics (see services/email-notifier/main.go).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-notifier
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: notifier
+    app.kubernetes.io/name: email-notifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: email-notifier
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dp-reality
+        app.kubernetes.io/component: notifier
+        app.kubernetes.io/name: email-notifier
+    spec:
+      containers:
+        - name: email-notifier
+          image: ghcr.io/ryxwaer/dp-reality/email-notifier:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef: { name: email-notifier }
+            - secretRef:    { name: email-notifier }

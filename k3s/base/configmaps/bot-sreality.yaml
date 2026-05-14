@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-sreality
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-sreality
+data:
+  SERVICE_ID: bot-sreality
+  DISPLAY_NAME: Sreality.cz
+  BASE_URL: http://bot-sreality:8000
+  SCRAPE_INTERVAL_MINUTES: "10"

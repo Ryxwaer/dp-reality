@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-sreality
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-sreality
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bot-sreality
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dp-reality
+        app.kubernetes.io/component: bot
+        app.kubernetes.io/name: bot-sreality
+    spec:
+      containers:
+        - name: bot-sreality
+          image: ghcr.io/ryxwaer/dp-reality/bot-sreality:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef: { name: bot-sreality }
+            - secretRef:    { name: bot-sreality }
+          ports:
+            - { name: http, containerPort: 8000 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 30

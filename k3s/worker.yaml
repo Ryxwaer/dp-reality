@@ -1,3 +1,0 @@
-server: "https://100.93.242.42:6443"
-token: "<SERVER_GENERATED_TOKEN>"
-vpn-auth: "name=tailscale,joinKey=<TSKEY_AUTH>"

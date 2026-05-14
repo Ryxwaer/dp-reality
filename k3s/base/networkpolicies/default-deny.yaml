@@ -1,0 +1,15 @@
+# Drop every ingress + egress packet in the namespace unless an
+# additional NetworkPolicy explicitly allows it. The per-workload
+# policies below layer on top of this with their allow lists.
+#
+# REQUIRES a NetworkPolicy-enforcing CNI. K3s default Flannel does
+# NOT enforce policies; install kube-router's NetworkPolicy
+# DaemonSet (runbook step 2) for this to actually take effect.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: dp-reality
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]

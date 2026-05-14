@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-bazos
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-bazos
+data:
+  SERVICE_ID: bot-bazos
+  DISPLAY_NAME: Bazos.cz
+  BASE_URL: http://bot-bazos:8000
+  SCRAPE_INTERVAL_MINUTES: "5"
+  SCRAPE_PAGES: "5"
