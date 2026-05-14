@@ -43,6 +43,15 @@ spec:
           namespace: monitoring
           additionalLabels:
             release: kube-prometheus-stack
+          # The exported `nginx_ingress_controller_requests` metric
+          # carries `namespace` (the Ingress's namespace) and
+          # `service` labels of its own. Without honorLabels, the
+          # Prometheus Operator overrides them with the scrape
+          # target's labels (controller namespace = ingress-nginx),
+          # so Flagger's built-in `request-success-rate` query
+          # (which filters by `namespace="dp-reality"`) returns
+          # empty and every canary halts on metric NaN.
+          honorLabels: true
       podAnnotations:
         # Belt and braces for environments where the ServiceMonitor
         # is not yet ready (e.g. fresh bootstrap before Prometheus
