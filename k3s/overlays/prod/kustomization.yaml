@@ -14,7 +14,7 @@ resources:
 # with a sortable `main-<sha8>-<epoch>` tag.
 images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-bazos
-    newTag: main-ca3cdefc-1778788888 # {"$imagepolicy": "flux-system:bot-bazos:tag"}
+    newTag: main-b84d15b8-1778791857 # {"$imagepolicy": "flux-system:bot-bazos:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
     newTag: main-ca3cdefc-1778788886 # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
