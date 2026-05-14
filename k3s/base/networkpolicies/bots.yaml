@@ -14,8 +14,11 @@ spec:
       app.kubernetes.io/component: bot
   policyTypes: [Ingress, Egress]
   ingress:
+    # `component: bff` matches `frontend`, `frontend-primary`, and
+    # `frontend-canary` (the Flagger clones), so a single rule covers
+    # the canary topology.
     - from:
-        - podSelector: { matchLabels: { app.kubernetes.io/name: frontend } }
+        - podSelector: { matchLabels: { app.kubernetes.io/component: bff } }
       ports:
         - { protocol: TCP, port: 8000 }
   egress:

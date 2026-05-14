@@ -4,9 +4,12 @@ metadata:
   name: frontend
   namespace: dp-reality
 spec:
+  # `frontend`, `frontend-primary`, `frontend-canary` (Flagger clones)
+  # all carry `component: bff`; selecting by component avoids the
+  # need for a separate NetworkPolicy per Flagger-generated workload.
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: frontend
+      app.kubernetes.io/component: bff
   policyTypes: [Ingress, Egress]
   # Ingress traffic now arrives via ingress-nginx (Phase B): the
   # external NPM → NodePort 30090 (ingress-nginx) → this pod. The
