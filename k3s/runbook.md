@@ -1,42 +1,65 @@
 # K3s deployment runbook — `dp-reality` on minisforum
 
-Operator-side instructions for the **phase-1 single-node K3s deployment**
-on `server.ryxwaer.com` (alias `minisforum`). The cluster coexists with
-the existing `nginx-proxy-manager` + Docker stack on the same host; the
-existing services are not touched.
+Operator-side instructions for the single-node K3s deployment on
+`server.ryxwaer.com` (alias `minisforum`). The cluster coexists with
+the existing `nginx-proxy-manager` + Docker stack on the same host;
+the existing services are not touched.
 
-Phases 2 (GHA + HPA + Flux) and 3 (SOPS + CronJobs) are deferred and
-have their own future runbook sections at the bottom.
+Phases are layered on top of each other:
 
-## Topology in phase 1
+- **Phase 1** — K3s + raw `kubectl apply` of the workload (the
+  bootstrap path; used once on a brand-new cluster).
+- **Phase 2** — Flux CD GitOps (continuous delivery).
+- **Phase 3** — SOPS encryption of Secrets at rest.
+- **Phase B** — ingress-nginx + Prometheus + Flagger
+  (progressive delivery / automatic rollback per thesis §3.4).
+
+Phase B is the steady-state topology; phase 1 is preserved here for
+disaster-recovery rebuilds.
+
+## Topology (Phase B, current)
 
 ```
 internet ─► nginx-proxy-manager (Docker, host :80/:443, owns TLS)
+                │  Forward Host: 172.17.0.1 (or 192.168.1.138)
+                │  Forward Port: 30090
+                ▼
+           K3s Service `ingress-nginx-controller` (NodePort :30090)
                 │
-                └─ proxies reality.ryxwaer.com → 127.0.0.1:30080
-                                                       │
-              ┌────────────────────────────────────────┘
+                ▼ (routes by `Host: reality.ryxwaer.com`)
+           Ingress `frontend` ───────────── Ingress `frontend-canary`
+              │ (apex, 90%–100%)                │ (Flagger-managed,
+              │                                 │  `canary-weight: N`)
+              ▼                                 ▼
+           Service `frontend`                Service `frontend-canary`
+              │ (selects -primary pods)          │ (selects canary pods)
+              ▼                                 ▼
+           Deployment `frontend-primary`     Deployment `frontend`
+           (Flagger-managed, always live)    (template; scaled to 0
+              │                                 unless a canary is
+              │                                 in progress)
               ▼
-           K3s Service `frontend` (NodePort :30080)
-              │
-              ▼
-           K3s pod `frontend-xxx` :3000
-              │
-              ▼
-           cluster-internal: rabbitmq, mongodb, bot-bazos, bot-sreality, email-notifier
+           cluster-internal: rabbitmq, mongodb, bot-bazos, bot-sreality,
+           email-notifier (plain Deployments — no Flagger; see Phase B
+           § "Why no canary for the bots?")
 ```
 
 Everything inside the cluster talks via cluster DNS (`rabbitmq:5672`,
-`mongodb-0.mongodb:27017`, etc.). The only host port the cluster opens
-is `30080` for the BFF NodePort.
+`mongodb-0.mongodb:27017`, etc.). The only host ports the cluster
+opens are `30090` (ingress-nginx HTTP, NPM upstream) and `30443`
+(ingress-nginx HTTPS, unused while NPM owns TLS — kept available for
+future direct-TLS topologies). `30080` (the direct frontend NodePort)
+was retired when Path B landed; the Service that backed it is now
+owned by Flagger.
 
-## Hostname / port assignments (phase 1, fixed)
+## Hostname / port assignments
 
 | Concern                         | Value                                      |
 | ------------------------------- | ------------------------------------------ |
 | Namespace                       | `dp-reality`                               |
 | Cluster DNS suffix              | `dp-reality.svc.cluster.local`             |
-| BFF NodePort                    | `30080` (NPM upstream)                     |
+| ingress-nginx NodePort (HTTP)   | `30090` (NPM upstream)                     |
+| ingress-nginx NodePort (HTTPS)  | `30443` (unused while NPM owns TLS)        |
 | K3s API                         | `:6443`                                    |
 | MongoDB replica set name        | `dp-rs`                                    |
 | GHCR image namespace            | `ghcr.io/ryxwaer/dp-reality/<service>`     |
@@ -316,22 +339,26 @@ Without changing anything else — the connection string already lists
 the headless service and `?replicaSet=dp-rs`, so drivers pick up the
 new member automatically.
 
-## 6. Point NPM at the K3s frontend
+## 6. Point NPM at ingress-nginx
 
 In nginx-proxy-manager's UI, edit the `reality.ryxwaer.com`
 proxy host:
 
 - **Scheme**: `http`
-- **Forward Hostname / IP**: `192.168.1.138` (the host's primary LAN
-  IP — NOT `127.0.0.1`, since inside the NPM container that resolves
-  to NPM's own loopback). `172.17.0.1` (the default `docker0` bridge
-  gateway) also works.
-- **Forward Port**: `30080`
+- **Forward Hostname / IP**: `172.17.0.1` (the `docker0` bridge
+  gateway — fastest path from inside the NPM container to a host
+  NodePort). `192.168.1.138` (the host's primary LAN IP) also works.
+  `127.0.0.1` does NOT — inside the NPM container that resolves
+  to NPM's own loopback.
+- **Forward Port**: `30090`  (ingress-nginx HTTP NodePort).
 - **Cache assets**: off
 - **WebSocket support**: on  (the inbox uses SSE, which NPM treats as
   a long-lived HTTP response; WebSocket support keeps NPM from
   buffering the stream)
 - **Access list / SSL settings**: unchanged (NPM keeps owning TLS)
+
+NPM preserves the `Host: reality.ryxwaer.com` header upstream, which
+is exactly what ingress-nginx needs for its Ingress rule.
 
 Verify in a browser: `https://reality.ryxwaer.com/` → K3s frontend
 serves the login page.
@@ -602,6 +629,183 @@ Then add the file to `k3s/base/kustomization.yaml`.
 Same as 3.3 — open with `sops`, set a new value, save, commit, push.
 The kustomize-controller applies the new ciphertext, K8s mutates the
 Secret, and the env-var checksum change rolls the consuming pods.
+
+## Phase B — Ingress + Metrics + Progressive Delivery
+
+Closes the "failed deployments trigger automatic rollback" claim in
+thesis §3.4. Three Helm charts go in:
+
+- **ingress-nginx 4.15.x** — in-cluster Ingress that sits between
+  NPM and the workload Services. NPM no longer talks directly to a
+  workload NodePort; it forwards to ingress-nginx on `:30090`, which
+  routes by `Host: reality.ryxwaer.com`.
+- **kube-prometheus-stack 85.x** — Prometheus + Grafana +
+  node-exporter + kube-state-metrics. Flagger uses Prometheus to
+  decide whether a canary is healthy. Alertmanager is disabled (no
+  alerting routes yet); the K3s-unreachable control-plane scrapes
+  (kube-controller-manager, kube-scheduler, kube-proxy, etcd) are
+  also disabled.
+- **Flagger 1.43.x** + **flagger-loadtester 0.37.x** — progressive
+  delivery controller. `meshProvider: nginx`, `metricsServer`
+  pointing at the in-cluster Prometheus.
+
+All three are reconciled by Flux from `flux/infra/prod/` via the
+`infra` Kustomization (`flux/clusters/prod/infra.yaml`). They have
+no operator-side install step; once the cluster has Flux
+(Phase 2 §2.3), the Kustomization brings them up on its own.
+
+### B.1 The Canary CR (frontend only)
+
+`k3s/base/frontend/canary.yaml` declares the BFF as a Canary:
+
+- `provider: nginx` — Flagger annotates the canary Ingress with
+  `nginx.ingress.kubernetes.io/canary-weight: N`; ingress-nginx
+  splits traffic at the controller layer.
+- `targetRef` → the `frontend` Deployment. The Deployment is a
+  template; Flagger keeps it at `replicas: 0` and uses its spec to
+  bootstrap `frontend-primary` (always-on) and, during a rollout,
+  `frontend` itself (scaled to 1 only while the canary is in
+  flight).
+- `ingressRef` → the apex Ingress `frontend`. Flagger generates a
+  sibling `frontend-canary` Ingress alongside it and rewrites
+  `canary-weight` on each step.
+- `analysis.maxWeight: 50` + `stepWeight: 10` — five 30 s steps of
+  10 % → 20 % → … → 50 %. A bad image therefore takes ≤ 30 s of
+  ≤ 10 % traffic before the first metric verdict, and ≤ 4 min total
+  for a clean promote. Primary stays warm at 100 % of its own
+  capacity throughout, so rollback is instant.
+- `metrics` → custom `MetricTemplate`s (`k3s/base/frontend/metric-
+  templates.yaml`) because the built-in NGINX queries Flagger ships
+  filter by `ingress="<name>-canary"`, whereas ingress-nginx ≥ 1.5
+  records canary requests under the apex Ingress (`ingress=
+  "<name>"`) with the canary backend in a separate `canary` label.
+  The custom templates rewrite the queries to match the actual
+  metric shape.
+- `webhooks` →
+  - `smoke` (`pre-rollout`): the loadtester `curl`s
+    `frontend-canary:3000/api/healthz` and aborts the canary if
+    that returns ≠ 0.
+  - `load-test` (`rollout`): 5 RPS × 2 workers × 60 s of
+    `hey -host reality.ryxwaer.com http://ingress-nginx-controller`
+    against `/api/healthz`. Keeps `nginx_ingress_controller_requests`
+    populated even when real user traffic is sparse, so the success-
+    rate metric never goes NaN and Flagger doesn't false-abort.
+
+### B.2 Triggering a canary manually (thesis demo)
+
+Any change to `spec.template` of the `frontend` Deployment triggers
+analysis. The commit-friendly way is to bump
+`CANARY_SMOKE_TEST` in `k3s/base/frontend/deployment.yaml`:
+
+```bash
+sed -i 's/value: "phase-b-bootstrap-v[0-9]*"/value: "phase-b-bootstrap-v9"/' \
+  k3s/base/frontend/deployment.yaml
+git add k3s/base/frontend/deployment.yaml
+git commit -m "trigger canary smoke test"
+git push
+```
+
+Flux reconciles (≤ 5 min), Flagger detects the new revision and
+starts the analysis. Watch the progression:
+
+```bash
+kubectl -n dp-reality get canary frontend -w
+# Optional, more detail:
+kubectl -n dp-reality describe canary frontend | tail -25
+kubectl -n flagger-system logs deploy/flagger -f | jq -r .msg
+```
+
+Successful run takes ~4–5 min from `Initialized` → `Progressing` →
+`Promoting` → `Finalising` → `Succeeded`.
+
+### B.3 Forcing a rollback (thesis demo, destructive)
+
+Deploy a deliberately bad image to see Flagger abort:
+
+```bash
+# Bump the image to a known-bad tag (or any tag that fails smoke).
+kubectl -n dp-reality set image deployment/frontend \
+  frontend=ghcr.io/ryxwaer/dp-reality/frontend:does-not-exist
+```
+
+Watch:
+
+```bash
+kubectl -n dp-reality get canary frontend -w
+```
+
+Expected transition: `Progressing` → `Halt advancement` (× threshold)
+→ `Failed`. `frontend-primary` is never touched; real users continue
+to see the previous good version because they're routed exclusively
+to primary while the canary builds.
+
+Cleanup (the deliberately-broken Deployment spec drifts from Git
+once you stop, so let Flux reconcile it back):
+
+```bash
+flux reconcile kustomization dp-reality --with-source
+```
+
+### B.4 Why no canary for the bots / email-notifier
+
+The three message-queue consumers (`bot-bazos`, `bot-sreality`,
+`email-notifier`) are deliberately left as plain Deployments with
+the standard Kubernetes rolling-update strategy and readiness
+probes. Rationale:
+
+1. **Split-brain consumers.** A Flagger canary would run
+   `<svc>-primary` and `<svc>` simultaneously, both consuming from
+   the same RabbitMQ queue. A broken canary processes messages it
+   shouldn't, and the damage is already done by the time the
+   metric-based abort kicks in.
+2. **No HTTP-level success metric.** The bots only expose
+   `:8000/configure` to the BFF; there is no user-facing HTTP path
+   with steady RPS that Flagger can compute a success-rate over.
+   Wiring custom Prometheus counters for message-processing success
+   would be a real instrumentation project, not a runbook step.
+3. **Rolling update + readiness probe is already "stop if broken".**
+   Both bots have `readinessProbe` and `livenessProbe` on
+   `:8000/healthz`; the kubelet will not progress the rollout past a
+   pod that never goes Ready. Operator notices the stuck rollout in
+   `kubectl get pods` and reverts with `git revert`.
+
+`email-notifier` doesn't even have HTTP and relies on the
+crash-on-error semantics inside `services/email-notifier/main.go`.
+
+### B.5 Grafana access
+
+`kube-prometheus-stack` ships Grafana as a ClusterIP service with
+auto-generated admin credentials. Retrieve and port-forward:
+
+```bash
+kubectl -n monitoring get secret kube-prometheus-stack-grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d
+# user: admin
+
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+# http://127.0.0.1:3000
+```
+
+The chart auto-loads useful dashboards (Kubernetes / Compute
+Resources, Node Exporter / Nodes, NGINX Ingress Controller). For
+canary visibility add the Flagger dashboard manually
+(`grafana.com/dashboards/14672`).
+
+### B.6 What happens if Prometheus is down
+
+Flagger marks every metric check as failed and aborts every canary
+after `threshold` consecutive failures (5 by default). Net effect:
+no progressive delivery, but `frontend-primary` keeps serving the
+last known-good version because Flagger never promotes a canary on
+failure. The runbook entry to recover is:
+
+```bash
+kubectl -n monitoring get pods | grep prometheus
+kubectl -n monitoring logs prometheus-kube-prometheus-stack-0 -c prometheus --tail=50
+# Usually: storage pressure on local-path PVC, or a label conflict
+# after an upstream chart bump. Bumping the HelmRelease tag and
+# letting Flux reconcile fixes most cases.
+```
 
 ## Phase 3 (deferred) — CronJobs
 
