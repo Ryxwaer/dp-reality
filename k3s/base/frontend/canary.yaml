@@ -43,21 +43,29 @@ spec:
                          # primary stays warm so rollback is instant
     stepWeight: 10
     metrics:
-      - name: request-success-rate
-        # Built-in Flagger template (provided by the chart's
-        # MetricTemplate CRs). Computes
-        # `sum(rate(nginx_ingress_controller_requests{status!~"5.."}[1m])) /
-        #  sum(rate(nginx_ingress_controller_requests[1m])) * 100`
-        # scoped to the canary's ingress host. Must stay >= 99 %.
+      - name: nginx-success-rate
+        # Custom MetricTemplate (see `metric-templates.yaml`). Filters
+        # `nginx_ingress_controller_requests` by `ingress="frontend"`
+        # plus `canary!=""` so canary-routed requests are counted.
+        # Flagger's built-in `request-success-rate` would query
+        # `ingress="frontend-canary"`, which doesn't match the labels
+        # ingress-nginx ≥ 1.5 emits. Must stay >= 99 %.
+        templateRef:
+          name: nginx-success-rate
+          namespace: dp-reality
         thresholdRange:
           min: 99
         interval: 1m
-      - name: request-duration
-        # P99 latency in milliseconds across the same time window.
-        # Must stay <= 500 ms.
+      - name: nginx-request-duration
+        # Mean response duration in ms over the canary requests
+        # (same caveat as above — built-in queries the wrong label
+        # shape). Must stay <= 500 ms.
+        templateRef:
+          name: nginx-request-duration
+          namespace: dp-reality
         thresholdRange:
           max: 500
-        interval: 30s
+        interval: 1m
     webhooks:
       # Pre-rollout smoke probe: Flagger asks the loadtester to curl
       # `/api/healthz` against the canary service before opening the

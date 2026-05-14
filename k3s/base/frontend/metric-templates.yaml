@@ -1,0 +1,85 @@
+# Flagger's built-in NGINX metric templates query
+# `nginx_ingress_controller_requests{ingress="<name>-canary", canary!=""}`,
+# but ingress-nginx ≥ 1.5 records canary-routed requests under the
+# APEX ingress name (`ingress="<name>"`) with the canary backend
+# identifier in the `canary` label. The built-in queries therefore
+# match zero series, Flagger logs "no values found", and the
+# canary aborts within a few minutes.
+#
+# These MetricTemplates re-express the same intent against the
+# actual metric shape. Reference them by name from the Canary CR
+# (`spec.analysis.metrics[*].templateRef`).
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: nginx-success-rate
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bff
+    app.kubernetes.io/name: frontend
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.monitoring:9090
+  # `{{ target }}` resolves to the Canary's `spec.targetRef.name`
+  # (= `frontend`), which matches the apex Ingress's name. Flagger's
+  # built-in `{{ ingress }}` resolves to `<name>-canary` instead,
+  # which is the wrong label value for the metric ingress-nginx emits.
+  query: |
+    sum(
+      rate(
+        nginx_ingress_controller_requests{
+          namespace="{{ namespace }}",
+          ingress="{{ target }}",
+          canary!="",
+          status!~"5.*"
+        }[{{ interval }}]
+      )
+    )
+    /
+    sum(
+      rate(
+        nginx_ingress_controller_requests{
+          namespace="{{ namespace }}",
+          ingress="{{ target }}",
+          canary!=""
+        }[{{ interval }}]
+      )
+    )
+    * 100
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: nginx-request-duration
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bff
+    app.kubernetes.io/name: frontend
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.monitoring:9090
+  query: |
+    sum(
+      rate(
+        nginx_ingress_controller_response_duration_seconds_sum{
+          namespace="{{ namespace }}",
+          ingress="{{ target }}",
+          canary!=""
+        }[{{ interval }}]
+      )
+    )
+    /
+    sum(
+      rate(
+        nginx_ingress_controller_response_duration_seconds_count{
+          namespace="{{ namespace }}",
+          ingress="{{ target }}",
+          canary!=""
+        }[{{ interval }}]
+      )
+    )
+    * 1000
