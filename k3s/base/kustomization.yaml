@@ -11,12 +11,11 @@ resources:
   - configmaps/email-notifier.yaml
   - configmaps/frontend.yaml
 
-  - secrets/bot-bazos.yaml
-  - secrets/bot-sreality.yaml
-  - secrets/email-notifier.yaml
-  - secrets/frontend.yaml
-  - secrets/rabbitmq.yaml
-  - secrets/mongodb.yaml
+  # Secrets are deliberately NOT managed by Kustomize / Flux. The
+  # `k3s/runbook.md` step 4 (and Phase 2 §2.4) populates them
+  # imperatively with `kubectl create secret …` so real credentials
+  # never live in Git. Phase 3 (TODO/deployment/08-sealed-secrets-or-sops)
+  # will reintroduce them as SOPS-encrypted manifests.
 
   - rabbitmq/statefulset.yaml
   - rabbitmq/service.yaml

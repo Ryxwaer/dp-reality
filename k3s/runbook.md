@@ -199,15 +199,20 @@ kubectl kustomize k3s/overlays/prod
 kubectl apply -k k3s/overlays/prod
 ```
 
-This creates the `dp-reality` namespace, every ConfigMap, every
-Secret (with placeholder values — see step 4), the MongoDB and
-RabbitMQ StatefulSets, all four service Deployments, and the
-NetworkPolicies.
+This creates the `dp-reality` namespace, every ConfigMap, the MongoDB
+and RabbitMQ StatefulSets, all four service Deployments, and the
+NetworkPolicies. **No Secret resources** — those are operator-created
+in step 4 below. The Deployments stay in `ContainerCreating` until
+step 4 completes (the kubelet waits for the named Secrets to exist).
 
-## 4. Populate the placeholder Secrets
+## 4. Create the operator-managed Secrets
 
-Phase 3 (SOPS) replaces this manual step; for phase 1 the operator
-fills the Secret values in-cluster:
+Secrets are deliberately NOT in `k3s/base/secrets/` (and not committed
+to Git in any form until Phase 3 / SOPS) so real credentials never
+appear in the repo. The operator creates them imperatively here. They
+also carry `kustomize.toolkit.fluxcd.io/{prune,reconcile}=disabled`
+annotations so Flux (Phase 2) doesn't try to drift-correct them
+against an absent manifest:
 
 ```bash
 # RabbitMQ admin credentials (any strong values; bots will use them).
@@ -270,6 +275,22 @@ new env is picked up:
 ```bash
 kubectl -n dp-reality rollout restart deploy/bot-bazos deploy/bot-sreality deploy/email-notifier deploy/frontend
 ```
+
+Finally, tell Flux to leave these Secrets alone forever:
+
+```bash
+for s in bot-bazos bot-sreality email-notifier frontend rabbitmq mongodb; do
+  kubectl -n dp-reality annotate secret "$s" \
+    kustomize.toolkit.fluxcd.io/prune=disabled \
+    kustomize.toolkit.fluxcd.io/reconcile=disabled \
+    --overwrite
+done
+```
+
+`reconcile=disabled` tells the Flux kustomize-controller to skip these
+resources on every reconcile (no drift correction); `prune=disabled`
+tells it not to garbage-collect them even though no manifest in Git
+references them.
 
 ## 5. Initialise the MongoDB replica set
 
