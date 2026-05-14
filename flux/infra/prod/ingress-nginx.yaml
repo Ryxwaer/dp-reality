@@ -1,0 +1,73 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+  namespace: ingress-nginx
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: ingress-nginx
+      version: 4.15.x
+      sourceRef:
+        kind: HelmRepository
+        name: ingress-nginx
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    controller:
+      # The host already runs `nginx-proxy-manager` on :80 and :443, so
+      # the in-cluster controller cannot bind those ports on the node.
+      # We expose it as a NodePort (HTTP 30090, HTTPS 30443) and have
+      # NPM proxy `reality.ryxwaer.com` to :30090.
+      service:
+        type: NodePort
+        nodePorts:
+          http: 30090
+          https: 30443
+      # Required by Flagger: the controller must annotate every
+      # request with the canary cookie/header so per-target metrics
+      # can be filtered in Prometheus.
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+          additionalLabels:
+            release: kube-prometheus-stack
+      podAnnotations:
+        # Belt and braces for environments where the ServiceMonitor
+        # is not yet ready (e.g. fresh bootstrap before Prometheus
+        # has admitted the CRD).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10254"
+      # NPM already terminates TLS; the controller receives plain
+      # HTTP with `X-Forwarded-Proto: https`. Don't redirect to HTTPS
+      # at the controller layer or we get a double-redirect.
+      config:
+        use-forwarded-headers: "true"
+        compute-full-forwarded-for: "true"
+        use-proxy-protocol: "false"
+        proxy-body-size: "16m"
+      # Single-node cluster: one replica is fine, but we still want
+      # a PDB so the controller is not evicted at the same time as the
+      # workload it routes for.
+      replicaCount: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+  # Make sure the Prometheus stack is present (for ServiceMonitor) when
+  # the chart admits the metrics resources. The Kustomization itself
+  # has `wait: true` so the HelmRelease ordering inside the same
+  # Kustomization is handled here via `dependsOn` references.

@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    # Flagger talks to the controller's HTTP API via the
+    # ingress-nginx service; allowing the namespace to be scraped by
+    # Prometheus is what lets Flagger compute 5xx rate / latency.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flagger-system
+  labels:
+    app.kubernetes.io/part-of: dp-reality

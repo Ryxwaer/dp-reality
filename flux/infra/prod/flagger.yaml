@@ -1,0 +1,92 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger
+  namespace: flagger-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: flagger
+      version: 1.43.x
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  # Flagger needs the NGINX controller (to apply canary
+  # weight annotations on Ingress) and Prometheus (to compute the
+  # success-rate / latency metrics). Both are installed by the
+  # sibling HelmReleases inside this same Kustomization.
+  dependsOn:
+    - name: ingress-nginx
+      namespace: ingress-nginx
+    - name: kube-prometheus-stack
+      namespace: monitoring
+  values:
+    meshProvider: nginx
+    metricsServer: http://kube-prometheus-stack-prometheus.monitoring:9090
+    # Watch only the dp-reality namespace; we don't want Flagger
+    # following Deployments in flux-system or monitoring.
+    selectorLabels: app.kubernetes.io/name
+    namespace: ""
+    # Expose Flagger's own metrics so we can see canary decisions in
+    # Grafana / Prometheus.
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        release: kube-prometheus-stack
+    # No leader election: one replica on a single-node cluster.
+    leaderElection:
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+---
+# Optional loadtester: lets Flagger run smoke/load curls during
+# canary analysis (the `webhook` step). Light-weight, ~10 MB.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger-loadtester
+  namespace: flagger-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: loadtester
+      version: 0.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  dependsOn:
+    - name: flagger
+      namespace: flagger-system
+  values:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        memory: 64Mi

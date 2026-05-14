@@ -1,0 +1,118 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 85.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    crds:
+      enabled: true
+    cleanPrometheusOperatorObjectNames: true
+    # Single-node deployment: no need for an Alertmanager (we have
+    # no alerting routes yet) or for HA replicas. Keep node-exporter
+    # and kube-state-metrics because Flagger / dashboards rely on
+    # them. Keep Grafana for the thesis demo.
+    alertmanager:
+      enabled: false
+    prometheus:
+      prometheusSpec:
+        retention: 7d
+        retentionSize: 10GiB
+        # The chart auto-discovers ServiceMonitors with matching
+        # release labels; loosen so any ServiceMonitor in any
+        # namespace (e.g. ingress-nginx's) is picked up.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 15Gi
+    grafana:
+      enabled: true
+      defaultDashboardsTimezone: utc
+      # The chart auto-generates a random admin password on first
+      # install and stores it under
+      # `monitoring/kube-prometheus-stack-grafana` as
+      # `admin-user` / `admin-password`. Retrieve with:
+      #   kubectl -n monitoring get secret kube-prometheus-stack-grafana \
+      #     -o jsonpath='{.data.admin-password}' | base64 -d
+      # Grafana is internal-only (ClusterIP); port-forward locally to
+      # view dashboards during the thesis demo.
+      persistence:
+        enabled: true
+        storageClassName: local-path
+        size: 2Gi
+      service:
+        type: ClusterIP
+      sidecar:
+        dashboards:
+          enabled: true
+          searchNamespace: ALL
+        datasources:
+          enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+    nodeExporter:
+      enabled: true
+    kubeStateMetrics:
+      enabled: true
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+    prometheus-node-exporter:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+    # Disable scrapes for control-plane components that K3s does not
+    # expose by default (the kube-controller-manager / scheduler /
+    # etcd endpoints are baked into k3s and unreachable through the
+    # usual /metrics endpoint).
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: false
