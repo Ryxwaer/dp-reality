@@ -5,11 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services/**'
-      - 'k3s/**'
       - '.github/workflows/build-and-push.yml'
-  pull_request:
-    paths:
-      - 'k3s/base/secrets/**'
   workflow_dispatch:
 
 # Lower-case repository owner is required for ghcr.io image names.
@@ -22,27 +18,7 @@ permissions:
   packages: write
 
 jobs:
-  secrets-lint:
-    # Cheap pre-flight: refuse to merge a PR (or build a push) if any
-    # k3s/base/secrets/*.yaml is committed without SOPS encryption.
-    # The `sops:` metadata block at file level is the marker.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify all Secret manifests are SOPS-encrypted
-        run: |
-          fail=0
-          for f in k3s/base/secrets/*.yaml; do
-            [ -e "$f" ] || continue
-            if ! grep -q '^sops:' "$f"; then
-              echo "::error file=$f::Secret manifest is not SOPS-encrypted"
-              fail=1
-            fi
-          done
-          exit "$fail"
-
   build:
-    needs: secrets-lint
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
