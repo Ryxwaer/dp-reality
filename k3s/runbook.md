@@ -361,15 +361,150 @@ use them.
 
 ---
 
-## Phase 2 (later) — CI + HPA + Flux
+## Phase 2 — Flux CD bootstrap (continuous delivery)
 
-To be added when phase 1 is verified stable:
+After this section the cluster pulls from this Git repo on its own.
+`kubectl apply -k` is no longer the supported deploy path; pushes to
+`main` are.
 
-- `.github/workflows/build-and-push.yml` builds multi-arch images to GHCR.
-- `k3s/base/hpa/frontend.yaml` adds a CPU-based HPA on the BFF.
-- `flux/clusters/prod/` bootstraps Flux CD pointing at this repo.
-- After Flux is in, deploys are git-push-driven; manual
-  `kubectl apply -k` is no longer the supported path.
+### 2.1 What gets installed
+
+`flux bootstrap github` does three things in one shot:
+
+1. Installs the Flux controllers into the cluster's `flux-system`
+   namespace (source-controller, kustomize-controller, notification-
+   controller, helm-controller, plus — because we pass
+   `--components-extra` — image-reflector-controller and
+   image-automation-controller).
+2. Creates a deploy key on the GitHub repo with write access and
+   stores it in-cluster as the `flux-system` GitRepository source.
+3. Commits the controller manifests into the repo under
+   `flux/clusters/prod/flux-system/`, plus a `gotk-sync.yaml`
+   `Kustomization` that points back at the same directory. Subsequent
+   reconciles pull `flux/clusters/prod/` and apply everything in it.
+
+After bootstrap, the rest of this directory (`apps.yaml`,
+`image-policies.yaml`, `image-updates.yaml`) is already committed by
+us and reconciled automatically.
+
+### 2.2 Prerequisites
+
+- A GitHub Personal Access Token with **`repo`** and
+  **`read:packages`** scopes. The same PAT is used for both the
+  bootstrap (`repo` for repo write access) and the GHCR pull
+  credential in 2.4 (`read:packages` for image-reflector to list
+  tags on the private packages).
+- `flux` CLI on the operator workstation:
+  ```bash
+  curl -s https://fluxcd.io/install.sh | sudo bash
+  flux --version
+  ```
+- `kubectl` already configured against the K3s cluster (Phase 1
+  step 1 covered this).
+
+### 2.3 Run the bootstrap
+
+```bash
+export GITHUB_USER=Ryxwaer
+export GITHUB_TOKEN='ghp_***********************************'
+
+flux bootstrap github \
+  --owner="$GITHUB_USER" \
+  --repository=dp-reality \
+  --branch=main \
+  --path=flux/clusters/prod \
+  --personal \
+  --read-write-key \
+  --components-extra=image-reflector-controller,image-automation-controller
+```
+
+What this command does, in order:
+
+1. Pushes `flux/clusters/prod/flux-system/{gotk-components,gotk-sync}.yaml`
+   to `main`.
+2. Creates the `flux-system` namespace and applies those manifests.
+3. Generates a Deploy Key on the GitHub repo (visible under
+   `Settings → Deploy keys`) with **read+write** access. Flux uses
+   it to commit image-tag bumps back to `main`.
+4. Reconciles. From this point `flux get all -n flux-system` should
+   show every Kustomization, GitRepository, and image-automation
+   resource as `Ready`.
+
+If you ever need to re-run the bootstrap (e.g., to rotate the deploy
+key), delete the secret first:
+
+```bash
+kubectl -n flux-system delete secret flux-system
+```
+
+### 2.4 Give image-reflector access to GHCR (private packages)
+
+The `ImageRepository` resources in
+`flux/clusters/prod/image-policies.yaml` reference a `ghcr-auth`
+secret in `flux-system`. Create it once with the same PAT
+(`read:packages` is sufficient for this — `repo` is not required
+here):
+
+```bash
+PAT="$GITHUB_TOKEN"  # or a separate read:packages-only PAT
+
+kubectl -n flux-system create secret docker-registry ghcr-auth \
+  --docker-server=ghcr.io \
+  --docker-username="$GITHUB_USER" \
+  --docker-password="$PAT" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### 2.5 Verify
+
+```bash
+# All controllers + the bootstrap Kustomization are ready.
+flux get all -n flux-system
+
+# Image scanning sees tags from GHCR.
+flux get image repository -n flux-system
+flux get image policy     -n flux-system
+
+# The first image-automation run rewrites the overlay; you'll see a
+# commit by `fluxcdbot` on origin/main shortly:
+git fetch && git log --oneline origin/main | head -3
+```
+
+After image-automation has bumped `k3s/overlays/prod/kustomization.yaml`,
+the `dp-reality` Kustomization rolls each Deployment that referenced
+the new tag. From now on every push to `main` triggers:
+
+```
+GitHub push  →  CI builds image, tags main-<sha8>-<epoch>  →
+  Flux image-reflector sees new tag  →
+    Flux image-automation commits new tag into overlay  →
+      Flux kustomize-controller rolls the Deployments
+```
+
+End-to-end latency is dominated by CI build (~3 min for arm64 bots,
+~3 min for amd64 frontend), plus Flux's image scan interval (1 min)
+and apply interval (5 min). Worst case: ~10 min from push to
+production.
+
+### 2.6 Manual override (still possible)
+
+Flux drift-corrects, so editing a Deployment with `kubectl edit` is
+reverted within 5 min. If you need to pause Flux for a debug session:
+
+```bash
+flux suspend kustomization dp-reality
+# ... make changes ...
+flux resume  kustomization dp-reality
+```
+
+A `flux reconcile kustomization dp-reality --with-source` triggers
+an immediate sync.
+
+## Phase 2 (deferred) — HPA
+
+- `k3s/base/hpa/frontend.yaml` adds a CPU-based HorizontalPodAutoscaler
+  on the BFF. Requires session-state in MongoDB (`TODO/security/01`)
+  so multiple BFF replicas can share login state.
 
 ## Phase 3 (later) — SOPS + CronJobs
 

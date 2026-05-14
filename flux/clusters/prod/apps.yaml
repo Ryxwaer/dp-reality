@@ -1,0 +1,25 @@
+---
+# Root Kustomization for the application stack. Flux reconciles
+# `k3s/overlays/prod` from the same Git source that bootstrap put
+# under `flux/clusters/prod/flux-system/`. Any change to the overlay
+# (including image tag bumps committed by image-automation) is rolled
+# out on the next reconcile.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dp-reality
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./k3s/overlays/prod
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Drift correction: if someone `kubectl edit`s a Deployment, Flux
+  # reverts it within the interval. The targetNamespace below is what
+  # `kubectl apply -k` would print as the effective namespace.
+  targetNamespace: dp-reality

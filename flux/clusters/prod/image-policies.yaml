@@ -1,0 +1,113 @@
+---
+# Per-service ImageRepository (scans GHCR every minute) and ImagePolicy
+# (picks the largest numerical timestamp from tags matching
+# `^main-<sha8>-<epoch>$`). The matching tag is produced by
+# `.github/workflows/build-and-push.yml` on every push to main.
+#
+# All four ImageRepositories share the same pull credential. The
+# `ghcr-auth` secret is created by the operator in flux-system
+# (see k3s/runbook.md, "Phase 2 — Flux CD bootstrap").
+
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: bot-bazos
+  namespace: flux-system
+spec:
+  image: ghcr.io/ryxwaer/dp-reality/bot-bazos
+  interval: 1m
+  secretRef:
+    name: ghcr-auth
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: bot-bazos
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: bot-bazos
+  filterTags:
+    pattern: '^main-[a-f0-9]+-(?P<ts>[0-9]+)$'
+    extract: '$ts'
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: bot-sreality
+  namespace: flux-system
+spec:
+  image: ghcr.io/ryxwaer/dp-reality/bot-sreality
+  interval: 1m
+  secretRef:
+    name: ghcr-auth
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: bot-sreality
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: bot-sreality
+  filterTags:
+    pattern: '^main-[a-f0-9]+-(?P<ts>[0-9]+)$'
+    extract: '$ts'
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: email-notifier
+  namespace: flux-system
+spec:
+  image: ghcr.io/ryxwaer/dp-reality/email-notifier
+  interval: 1m
+  secretRef:
+    name: ghcr-auth
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: email-notifier
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: email-notifier
+  filterTags:
+    pattern: '^main-[a-f0-9]+-(?P<ts>[0-9]+)$'
+    extract: '$ts'
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: frontend
+  namespace: flux-system
+spec:
+  image: ghcr.io/ryxwaer/dp-reality/frontend
+  interval: 1m
+  secretRef:
+    name: ghcr-auth
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: frontend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: frontend
+  filterTags:
+    pattern: '^main-[a-f0-9]+-(?P<ts>[0-9]+)$'
+    extract: '$ts'
+  policy:
+    numerical:
+      order: asc

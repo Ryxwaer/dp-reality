@@ -57,6 +57,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Sortable tag for Flux image-automation. The ImagePolicy in
+      # flux/clusters/prod/image-policies.yaml extracts the trailing
+      # epoch and picks the largest one.
+      - name: Generate Flux build ID
+        id: build_id
+        run: |
+          sha="${{ github.sha }}"
+          short="${sha:0:8}"
+          ts=$(date -u +%s)
+          echo "tag=main-${short}-${ts}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.service.name }}
         uses: docker/build-push-action@v6
         with:
@@ -67,5 +78,6 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:latest
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:${{ steps.build_id.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.service.name }}
           cache-to:   type=gha,scope=${{ matrix.service.name }},mode=max

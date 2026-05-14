@@ -1,0 +1,35 @@
+---
+# Watches all ImagePolicies in flux-system, rewrites the matching
+# `# {"$imagepolicy": "flux-system:<policy>:tag"}` markers in
+# k3s/overlays/prod/kustomization.yaml, and pushes the change back
+# to main. The flux-system GitRepository (created by `flux bootstrap`)
+# already has a deploy key with write access.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: |
+        chore(images): bump image tags
+
+        {{ range $image, $_ := .Updated.Images -}}
+        - {{ $image }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    path: ./k3s/overlays/prod
+    strategy: Setters

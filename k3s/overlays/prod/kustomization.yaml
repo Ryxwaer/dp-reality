@@ -6,15 +6,21 @@ namespace: dp-reality
 resources:
   - ../../base
 
-# Image tags. Phase 2 swaps `:latest` for sha-pinned tags maintained
-# by Flux image-automation. For phase 1 the operator pulls `:latest`
-# on every Deployment rollout.
+# Image tags. Flux image-automation watches GHCR for tags matching
+# the policy in flux/clusters/prod/image-policies.yaml and commits the
+# newest match back into the `newTag` value below — the `$imagepolicy`
+# kyaml setter marker tells Flux which line to rewrite.
+#
+# The initial `newTag: latest` is the cold-start value: until Flux's
+# image-reflector has scanned GHCR for the first time the cluster pulls
+# `:latest`. After the first reconcile each `newTag` is overwritten
+# with a sortable `main-<sha8>-<epoch>` tag.
 images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-bazos
-    newTag: latest
+    newTag: latest # {"$imagepolicy": "flux-system:bot-bazos:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
-    newTag: latest
+    newTag: latest # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
-    newTag: latest
+    newTag: latest # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
-    newTag: latest
+    newTag: latest # {"$imagepolicy": "flux-system:frontend:tag"}
