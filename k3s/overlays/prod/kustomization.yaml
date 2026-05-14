@@ -1,11 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 namespace: dp-reality
-
 resources:
   - ../../base
-
 # Image tags. Flux image-automation watches GHCR for tags matching
 # the policy in flux/clusters/prod/image-policies.yaml and commits the
 # newest match back into the `newTag` value below — the `$imagepolicy`
@@ -17,10 +14,10 @@ resources:
 # with a sortable `main-<sha8>-<epoch>` tag.
 images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-bazos
-    newTag: latest # {"$imagepolicy": "flux-system:bot-bazos:tag"}
+    newTag: main-ca3cdefc-1778788888 # {"$imagepolicy": "flux-system:bot-bazos:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
-    newTag: latest # {"$imagepolicy": "flux-system:bot-sreality:tag"}
+    newTag: main-ca3cdefc-1778788886 # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
-    newTag: latest # {"$imagepolicy": "flux-system:email-notifier:tag"}
+    newTag: main-ca3cdefc-1778788880 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
-    newTag: latest # {"$imagepolicy": "flux-system:frontend:tag"}
+    newTag: main-ca3cdefc-1778788884 # {"$imagepolicy": "flux-system:frontend:tag"}
