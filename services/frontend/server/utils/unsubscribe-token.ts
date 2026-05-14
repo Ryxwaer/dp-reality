@@ -3,13 +3,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 // Token format mirrors services/email-notifier/internal/unsubscribe:
 //   <base64url(payload_json)>.<base64url(hmac_sha256)>
 //
-// Payload is just the user id + an issued-at + an expiry.
-// The bot list comes from the user document at click time, so there's
-// no per-bot or per-source claim baked into the token.
+// Payload carries the user id + issued-at + expiry, plus an optional
+// `bid` (bot service id) the email-notifier embeds to indicate which
+// bot's digest the recipient is clicking unsubscribe on. The full bot
+// list still comes from the user document at click time — `bid` is a
+// UI-only hint used to pre-select that bot's configs on the page. Old
+// tokens without `bid` still verify and render fine (no pre-selection).
 export interface UnsubscribePayload {
   uid: string
   iat: number
   exp: number
+  bid?: string
 }
 
 const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60

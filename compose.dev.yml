@@ -100,12 +100,6 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      # Local dev hits our own docker-mailserver on the minisforum
-      # box directly (submission port, STARTTLS, PLAIN auth). This
-      # avoids burning Mailgun quota for development traffic. Because
-      # our MTA is not warmed up for arbitrary outbound mail, the
-      # MAIL_ALLOWED_RECIPIENT_DOMAINS allow-list below ensures we
-      # only ever attempt local-domain delivery in dev.
       MAIL_SMTP_SERVER: mail.ryxwaer.com
       MAIL_SMTP_PORT: 587
       MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
@@ -130,9 +124,9 @@ services:
     container_name: dp-reality-frontend
     build:
       context: .
-      dockerfile: services/frontend/Dockerfile
+      dockerfile: services/frontend/Dockerfile.dev
     pull_policy: build
-    image: dp-reality-frontend:latest
+    image: dp-reality-frontend-dev:latest
     environment:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
@@ -157,6 +151,8 @@ services:
             - .nuxt/
         - action: rebuild
           path: ./services/frontend/package.json
+        - action: rebuild
+          path: ./services/frontend/pnpm-lock.yaml
 
 volumes:
   rabbitmq_data:

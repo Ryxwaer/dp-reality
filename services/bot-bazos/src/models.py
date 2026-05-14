@@ -65,8 +65,6 @@ class BotConfig(BaseModel):
     user_id, active, created_at attached by repository).
     """
 
-    name: str = ""
-
     # Match dimensions. None = wildcard.
     category_main: Optional[str] = None  # "prodam" | "pronajmu"
     category_sub: Optional[str] = None  # "byt" | "dum" | "pozemek" | ...

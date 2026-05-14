@@ -60,9 +60,8 @@ const iframeSrc = computed(() => {
   // edit by attempting GET /configs/<id>, and theme is propagated via
   // the module:set-theme postMessage on color-mode change.
   const sp = new URLSearchParams({ config_id: minted.value.config_id })
-  const path = props.registry.configure_url || '/configure'
-  const slash = path.startsWith('/') ? '' : '/'
-  return `/modules/${minted.value.bot_id}${slash}${path.replace(/^\/+/, '')}?${sp.toString()}`
+  const path = (props.registry.configure_url || '/configure').replace(/^\/+/, '')
+  return `/modules/${minted.value.bot_id}/${path}?${sp.toString()}`
 })
 
 watch(() => colorMode.value, (next) => {

@@ -43,5 +43,8 @@ resources:
   - networkpolicies/rabbitmq.yaml
   - networkpolicies/mongodb.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: dp-reality
+# The `app.kubernetes.io/part-of: dp-reality` label is hand-written on
+# every metadata block; we deliberately don't use the deprecated
+# `commonLabels` (which forces the value into selectors and templates,
+# making it immutable across schema changes) or the newer
+# `labels:` shorthand (same trap once selectors are written).

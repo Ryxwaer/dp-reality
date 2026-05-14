@@ -4,9 +4,13 @@
 // to verify them, so the link in the email lands on the BFF unsubscribe
 // page where the actual user/bot lookup and toggling happens.
 //
-// Payload is intentionally minimal: just user_id + an issued-at
-// timestamp. The BFF re-derives the bot list from the user document at
-// click time, so we don't need to encode any bot-specific routing here.
+// Payload carries the user id, an issued-at timestamp, and (optionally)
+// the bot_id of the service whose digest the email belongs to. The bot
+// id is a UI hint: the BFF re-derives the full bot list from the user
+// document at click time and uses `bid` only to pre-select the
+// "disable emails" checkbox for that bot's configs. Tokens without
+// `bid` (e.g. from older builds) still verify and render — the page
+// just falls back to "nothing pre-selected".
 package unsubscribe
 
 import (
@@ -20,8 +24,13 @@ import (
 )
 
 type Payload struct {
-	UID       string `json:"uid"`
-	IssuedAt  int64  `json:"iat"`
+	UID      string `json:"uid"`
+	IssuedAt int64  `json:"iat"`
+	// BID is the bot service id (e.g. "bot-bazos") that originated
+	// this email. Optional; omitted when the email is not tied to a
+	// single bot (currently no such caller, but the field is reserved
+	// to keep the signing surface forward-compatible).
+	BID string `json:"bid,omitempty"`
 }
 
 func b64UrlEncode(in []byte) string {

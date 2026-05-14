@@ -5,11 +5,17 @@
 // card for a brand-new configuration). This package only stacks that
 // HTML inside a generic envelope that carries:
 //   - a banner with the bot name + match count;
-//   - the cards verbatim, in the order the bot service wrote them;
+//   - the cards verbatim, in the order the bot service wrote them,
+//     each wrapped in a per-card <a href> pointing at the listing URL
+//     so the whole tile is a click target in the email client (the
+//     inner anchors the bot bakes for the title + CTA button keep
+//     working; both layers point at the same URL, so however a given
+//     client resolves the nested anchors the user lands on the same
+//     page);
 //   - a footer with an unsubscribe link.
 //
-// We never inspect the card contents and never re-render them; that
-// HTML is the bot service's contract with the user, not ours.
+// We never inspect or re-render the card contents; the bot's HTML is
+// embedded verbatim inside the per-card anchor.
 package emailer
 
 import (
@@ -17,6 +23,8 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"mime"
+	"mime/quotedprintable"
 	"net/smtp"
 	"net/url"
 	"strings"
@@ -43,7 +51,19 @@ func envelope(heading, intro, unsubURL, cardsHTML string) string {
     <a href="%s" style="color:#94a3b8">Unsubscribe / manage your bots</a>
   </p>`, html.EscapeString(unsubURL))
 	}
+	// `color-scheme: only light` is the documented opt-out from
+	// dark-mode auto-inversion in mail clients that honour it (Apple
+	// Mail, modern Gmail, Outlook web). Without it, those clients
+	// recolour our intentionally light-on-light palette into their own
+	// dark-mode equivalents — turning text inside the tile-wide <a>
+	// into link-blue and the white card background into a dim grey,
+	// which destroys the per-element inline `color:` styling we rely on.
 	return fmt.Sprintf(`<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="color-scheme" content="only light">
+  <meta name="supported-color-schemes" content="only light">
+</head>
 <body style="max-width:600px;margin:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#f8fafc;color:#0f172a">
   <h2 style="color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin:0 0 16px">%s</h2>
   %s
@@ -53,11 +73,20 @@ func envelope(heading, intro, unsubURL, cardsHTML string) string {
 </html>`, html.EscapeString(heading), introHTML, cardsHTML, footerHTML)
 }
 
-func buildUnsubscribeURL(cfg config.Config, userID string) (string, error) {
+// buildUnsubscribeURL signs a token that identifies the recipient and,
+// when provided, the bot that triggered the email. The BFF reads `bid`
+// as a UI hint to pre-select the "disable emails" checkbox for that
+// bot's configs on the unsubscribe page — it does NOT scope the
+// available actions, since the user is still allowed to manage every
+// bot they own from the same page.
+func buildUnsubscribeURL(cfg config.Config, userID, botID string) (string, error) {
 	if cfg.UnsubscribeSecret == "" {
 		return "", nil
 	}
-	tok, err := unsubscribe.Sign(cfg.UnsubscribeSecret, unsubscribe.Payload{UID: userID})
+	tok, err := unsubscribe.Sign(cfg.UnsubscribeSecret, unsubscribe.Payload{
+		UID: userID,
+		BID: botID,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -84,6 +113,15 @@ func recipientDomainAllowed(allowed []string, to string) bool {
 	return false
 }
 
+// sendMail emits a properly-encoded RFC 5322 message. The HTML body is
+// passed through quoted-printable so postfix never has to break a line
+// itself — without this, postfix's <CR><LF><SPACE> soft-wrap of any
+// line longer than 998 bytes lands wherever the offset happens to fall,
+// which for our long single-line digests has been observed to split a
+// `<div>` opening tag, rendering the surrounding markup as literal
+// text in mail clients. The Subject is RFC 2047 Q-encoded so non-ASCII
+// (em dashes, accented characters) survives in clients that don't
+// auto-decode raw 8-bit headers.
 func sendMail(cfg config.Config, to, subject, body string) error {
 	if cfg.SMTPServer == "" {
 		slog.Warn("SMTP not configured, skipping email", "to", to, "subject", subject)
@@ -97,10 +135,18 @@ func sendMail(cfg config.Config, to, subject, body string) error {
 	var msg bytes.Buffer
 	fmt.Fprintf(&msg, "From: %s\r\n", cfg.FromEmail)
 	fmt.Fprintf(&msg, "To: %s\r\n", to)
-	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&msg, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&msg, "Content-Type: text/html; charset=UTF-8\r\n\r\n")
-	fmt.Fprint(&msg, body)
+	fmt.Fprintf(&msg, "Content-Type: text/html; charset=UTF-8\r\n")
+	fmt.Fprintf(&msg, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+
+	qp := quotedprintable.NewWriter(&msg)
+	if _, err := qp.Write([]byte(body)); err != nil {
+		return fmt.Errorf("encode body: %w", err)
+	}
+	if err := qp.Close(); err != nil {
+		return fmt.Errorf("close qp writer: %w", err)
+	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.SMTPServer, cfg.SMTPPort)
 	if err := smtp.SendMail(addr, auth, cfg.FromEmail, []string{to}, msg.Bytes()); err != nil {
@@ -123,7 +169,7 @@ func SendDigest(cfg config.Config, user repository.User, bot repository.Bot, row
 
 	var cards strings.Builder
 	for _, r := range rows {
-		cards.WriteString(r.HTML)
+		cards.WriteString(wrapCardLink(r.URL, r.HTML))
 	}
 
 	botLabel := bot.Name
@@ -133,7 +179,7 @@ func SendDigest(cfg config.Config, user repository.User, bot repository.Bot, row
 	heading := fmt.Sprintf(`%d new from "%s"`, len(rows), botLabel)
 	subject := fmt.Sprintf(`%d new match%s — %s`, len(rows), plural(len(rows)), botLabel)
 
-	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex())
+	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex(), bot.BotID)
 	if err != nil {
 		return fmt.Errorf("build unsubscribe url: %w", err)
 	}
@@ -151,8 +197,10 @@ func SendDigest(cfg config.Config, user repository.User, bot repository.Bot, row
 // configuration. Both `subject` and `cardHTML` are produced by the
 // originating bot service and treated as opaque ready-to-send strings;
 // we only wrap them in the standard envelope (header + footer +
-// unsubscribe).
-func SendWelcome(cfg config.Config, user repository.User, subject, cardHTML string) error {
+// unsubscribe). `botID` is the originating service id — embedded in
+// the unsubscribe token so the page can pre-select that bot's configs
+// if the recipient clicks through.
+func SendWelcome(cfg config.Config, user repository.User, botID, subject, cardHTML string) error {
 	if user.Email == "" {
 		slog.Warn("welcome: user has no email, skipping", "user_id", user.ID.Hex())
 		return nil
@@ -161,7 +209,7 @@ func SendWelcome(cfg config.Config, user repository.User, subject, cardHTML stri
 		return nil
 	}
 
-	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex())
+	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex(), botID)
 	if err != nil {
 		return fmt.Errorf("build unsubscribe url: %w", err)
 	}
@@ -179,4 +227,26 @@ func plural(n int) string {
 		return ""
 	}
 	return "es"
+}
+
+// wrapCardLink turns a bot-rendered card into a tile-wide click target.
+//
+// The inline styles deliberately neutralise the user-agent <a> defaults
+// (underline, link color) so the bot's own typography wins; `display:block`
+// is required because the card itself is a block-level <div> — without it
+// some clients render the wrapper as inline and collapse the layout.
+//
+// `url` is escaped for attribute context; the card HTML is the bot's
+// contract and is embedded verbatim. An empty URL falls back to the
+// unwrapped card so a misconfigured row still renders rather than
+// shipping a dead anchor.
+func wrapCardLink(url, cardHTML string) string {
+	if url == "" {
+		return cardHTML
+	}
+	return fmt.Sprintf(
+		`<a href="%s" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none;color:inherit">%s</a>`,
+		html.EscapeString(url),
+		cardHTML,
+	)
 }

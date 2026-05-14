@@ -4,8 +4,13 @@ Each match becomes one row in the shared `notifications` collection.
 The row carries:
   - structured fields (title, url, source_ref) used by the inbox list
     view and by the BFF's deduplication;
-  - a self-contained HTML card (`html`) that the inbox detail view and
-    the email envelope both render verbatim.
+  - a self-contained HTML card (`html`) — the *visual* content of the
+    notification (title, price, locality, labels, description). The
+    listing URL is intentionally NOT embedded as an anchor inside
+    this HTML: each consumer (email envelope, inbox detail view) wraps
+    the whole card in a single tile-wide <a> using the structured
+    `url` field. Nesting another <a> here would make HTML5 parsers
+    collapse the outer wrapper, breaking the tile click target.
 
 The HTML uses inline styles only — required because email clients
 ignore external stylesheets — and adheres to the platform's HTML
@@ -51,9 +56,12 @@ def _format_locality(listing: Listing) -> str:
 
 
 def render_card(listing: Listing) -> str:
-    """Return the inline-styled HTML card for one matched listing."""
+    """Return the inline-styled HTML card for one matched listing.
+
+    Anchor-free by contract: the consumer wraps the returned HTML in a
+    single tile-wide <a>. See module docstring.
+    """
     title = _esc(listing.title) or "(untitled listing)"
-    url = _esc(listing.source_url) or "#"
     locality = _esc(_format_locality(listing))
     property_label = _esc(_PROPERTY_LABELS.get(listing.property_type.value, ""))
     price_line = _esc(_format_price(listing.price, listing.price_type.value))
@@ -72,19 +80,13 @@ def render_card(listing: Listing) -> str:
         'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;'
         'background:#ffffff">'
         '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">'
-        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
-        'style="font-weight:600;font-size:15px;color:#0f172a;text-decoration:none">'
-        f'{title}</a>'
+        '<span style="font-weight:600;font-size:15px;color:#0f172a">'
+        f'{title}</span>'
         f'<span style="font-size:12px;color:#64748b;white-space:nowrap">{property_label}</span>'
         '</div>'
         f'<div style="margin-top:6px;font-size:13px;color:#1e293b">{price_line}</div>'
         f'<div style="margin-top:2px;font-size:12px;color:#64748b">{locality}</div>'
         f'{desc_html}'
-        '<div style="margin-top:10px">'
-        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
-        'style="display:inline-block;padding:6px 10px;border-radius:6px;'
-        'background:#0f172a;color:#ffffff;font-size:12px;text-decoration:none">'
-        'Open listing on Bazos →</a></div>'
         '</div>'
     )
 

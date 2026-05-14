@@ -140,7 +140,7 @@ func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
 		return
 	}
 
-	if err := emailer.SendWelcome(s.cfg, *user, ev.Subject, ev.HTML); err != nil {
+	if err := emailer.SendWelcome(s.cfg, *user, ev.BotID, ev.Subject, ev.HTML); err != nil {
 		// Welcome is a one-shot confirmation: nice to have, not worth
 		// retrying. Ack on failure to avoid hammering the upstream SMTP
 		// (and the log) when it rate-limits or rejects us. The user

@@ -33,25 +33,42 @@ interface ServiceGroupView {
 
 const groups = ref<ServiceGroupView[]>([])
 
-function toChoice(b: UnsubscribeBot): BotChoice {
+function toChoice(b: UnsubscribeBot, preselectDisable: boolean): BotChoice {
   return {
     config_id: b.config_id,
     name: b.name,
     bot_id: b.bot_id,
-    disable_email: false,
+    // Pre-checking "Disable emails" only makes sense for configs that
+    // are currently sending — otherwise the box would be ticked next
+    // to a "emails off" subtitle, suggesting a change that the submit
+    // logic would silently skip.
+    disable_email: preselectDisable && b.email_notifications,
     stop_bot: false,
     initial_email: b.email_notifications,
     initial_status: b.status
   }
 }
 
+const triggeredBotId = computed(() => summary.value?.triggered_by_bot_id ?? null)
+const triggeredGroupName = computed(() =>
+  triggeredBotId.value
+    ? summary.value?.groups.find(g => g.bot_id === triggeredBotId.value)?.display_name ?? null
+    : null
+)
+
 watch(summary, (s) => {
   if (!s) return
+  const triggered = s.triggered_by_bot_id
   groups.value = s.groups.map(g => ({
     bot_id: g.bot_id,
     display_name: g.display_name,
-    expanded: true,
-    bots: g.bots.map(toChoice)
+    // Only the originating group is expanded by default; the others
+    // collapse so the page's focus matches the user's intent ("turn off
+    // *this* bot's emails") without forcing them to scan unrelated
+    // sections. Falls back to the previous "all expanded" behaviour
+    // when the token has no bid (older email-notifier build).
+    expanded: triggered ? g.bot_id === triggered : true,
+    bots: g.bots.map(b => toChoice(b, triggered === g.bot_id))
   }))
 }, { immediate: true })
 
@@ -154,6 +171,18 @@ async function submit() {
       <div v-else-if="summary" class="flex flex-col gap-6">
         <div v-if="totalBots === 0" class="text-sm text-muted">
           You have no active bots.
+        </div>
+
+        <div
+          v-if="triggeredGroupName"
+          class="rounded-md border border-default bg-elevated/40 p-3 text-sm text-muted flex items-start gap-2"
+        >
+          <UIcon name="i-lucide-info" class="size-4 mt-0.5 shrink-0" />
+          <span>
+            You clicked unsubscribe from a <strong class="text-default">{{ triggeredGroupName }}</strong> digest.
+            All currently-emailing {{ triggeredGroupName }} configs are pre-selected to be silenced.
+            Adjust any of the boxes below — nothing is applied until you click <strong class="text-default">Apply changes</strong>.
+          </span>
         </div>
 
         <section

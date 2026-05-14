@@ -43,11 +43,19 @@ function formatLabels(labels: string[]): string {
   return `<div style="margin-top:8px">${chips}</div>`;
 }
 
+/**
+ * Anchor-free by contract: the returned HTML carries only the visual
+ * content (title, property label, price, locality, labels). The
+ * listing URL stays on the structured `url` field of the notification
+ * row; each consumer (email envelope, inbox detail view) wraps the
+ * whole card in a single tile-wide <a> tied to that URL. Embedding an
+ * inner <a> here would cause HTML5 parsers to close the outer wrapper
+ * implicitly, collapsing the tile click area to just the inner link.
+ */
 @Injectable()
 export class NotificationRendererService {
   renderCard(listing: Listing): string {
     const title = esc(listing.title) || '(untitled listing)';
-    const url = esc(listing.source_url) || '#';
     const locality = esc(formatLocality(listing));
     const propertyLabel = esc(
       `${PROPERTY_LABELS[listing.property_type] ?? ''}${
@@ -63,19 +71,13 @@ export class NotificationRendererService {
       'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;' +
       'background:#ffffff">' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
-      `<a href="${url}" target="_blank" rel="noopener noreferrer" ` +
-      'style="font-weight:600;font-size:15px;color:#0f172a;text-decoration:none">' +
-      `${title}</a>` +
+      '<span style="font-weight:600;font-size:15px;color:#0f172a">' +
+      `${title}</span>` +
       `<span style="font-size:12px;color:#64748b;white-space:nowrap">${propertyLabel}</span>` +
       '</div>' +
       `<div style="margin-top:6px;font-size:13px;color:#1e293b">${priceLine}</div>` +
       `<div style="margin-top:2px;font-size:12px;color:#64748b">${locality}</div>` +
       `${labelsHtml}` +
-      '<div style="margin-top:10px">' +
-      `<a href="${url}" target="_blank" rel="noopener noreferrer" ` +
-      'style="display:inline-block;padding:6px 10px;border-radius:6px;' +
-      'background:#0f172a;color:#ffffff;font-size:12px;text-decoration:none">' +
-      'Open listing on Sreality →</a></div>' +
       '</div>'
     );
   }

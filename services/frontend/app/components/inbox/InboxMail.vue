@@ -88,24 +88,18 @@ const meta = computed(() => [
 
       <!--
         notification.html is sanitized server-side at read time
-        (server/utils/sanitize-html.ts). Bots produce inline-styled HTML
-        cards aimed at email clients; we render them as-is so the inbox
-        and the email digest look identical.
+        (server/utils/sanitize-html.ts) and is anchor-free by contract:
+        the listing URL lives on notification.url and is applied here
+        as a tile-wide <a> wrapping the rendered content. Keeps the
+        inbox click affordance identical to the email digest.
       -->
-      <div
-        class="rounded-md border border-default p-4 bg-default"
-        v-html="notification.html"
-      />
-
-      <UButton
-        :to="notification.url"
+      <a
+        :href="notification.url"
         target="_blank"
-        icon="i-lucide-external-link"
-        trailing
-        label="Open listing on source"
-        color="neutral"
-        variant="subtle"
-        class="w-fit"
+        rel="noopener noreferrer"
+        class="block rounded-md border border-default p-4 bg-default text-current no-underline hover:bg-elevated transition-colors"
+        :aria-label="`Open ${notification.title} on source`"
+        v-html="notification.html"
       />
     </div>
   </UDashboardPanel>

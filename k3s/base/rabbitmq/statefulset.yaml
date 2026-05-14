@@ -33,7 +33,7 @@ spec:
               command: ["rabbitmq-diagnostics", "ping"]
             initialDelaySeconds: 15
             periodSeconds: 15
-            timeout: 10
+            timeoutSeconds: 10
           livenessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "status"]

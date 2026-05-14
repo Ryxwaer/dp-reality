@@ -13,6 +13,11 @@ This repo is implementation of project documented at `/home/ryxwaer/Documents/SK
 - Application should have no information on what are individual modules doing. Module should implement whole logic that it needs in order to work without any help from `/frontend` app.
 - you can change data structure but don't forget to update it in mongodb immediately (migrate or drop old data)
 
+# Local dev
+
+- Always run `compose.dev.yml` locally to test features or present changes to the user
+- It has watch enabled and changes will be reflected live
+
 # Deployemnt
 
 - minisforum server: `ssh minisforum` (do not deploy by yourself - rather notify user to do it)

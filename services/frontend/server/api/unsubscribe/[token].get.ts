@@ -21,13 +21,19 @@ export interface UnsubscribeServiceGroup {
 
 export interface UnsubscribeSummary {
   email: string
+  // The bot service id (e.g. "bot-bazos") whose digest the recipient
+  // clicked unsubscribe on. The page uses it to pre-select every
+  // matching config's "Disable emails" checkbox. `null` when the
+  // token was minted without a bid claim (older email-notifier build,
+  // or a non-bot-scoped email path).
+  triggered_by_bot_id: string | null
   groups: UnsubscribeServiceGroup[]
 }
 
-// Token only carries the user id. We list every active bot owned by
-// that user, grouped by their owning service. The email recipient
-// picks per-bot what to silence — no per-token source filter, no
-// module joins.
+// Token carries the user id and (optionally) the bot id of the
+// digest the user clicked. We list every active bot owned by that
+// user, grouped by service; `triggered_by_bot_id` is forwarded as a
+// UI hint so the page can pre-select the relevant configs.
 export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => {
   const token = getRouterParam(event, 'token')
   if (!token) {
@@ -42,7 +48,7 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
       statusMessage: `Unsubscribe link is ${reason === 'expired' ? 'expired' : 'invalid'}`
     })
   }
-  const { uid } = verified.payload
+  const { uid, bid } = verified.payload
 
   if (!ObjectId.isValid(uid)) {
     throw createError({ statusCode: 400, statusMessage: 'Bad token payload' })
@@ -86,8 +92,14 @@ export default defineEventHandler(async (event): Promise<UnsubscribeSummary> => 
     }))
     .sort((a, b) => a.display_name.localeCompare(b.display_name))
 
+  // Surface `bid` only if it actually maps to one of the user's
+  // groups — guards against a stale or malformed claim showing a
+  // "pre-selected" hint for a bot the user doesn't own.
+  const triggeredByBotId = bid && groupMap.has(bid) ? bid : null
+
   return {
     email: user.email as string,
+    triggered_by_bot_id: triggeredByBotId,
     groups
   }
 })
