@@ -98,15 +98,46 @@ that file down and rewrite `server: https://127.0.0.1:6443` to
 
 ### Fedora CoreOS / SELinux note
 
-If K3s fails to start with `permission denied` on `/usr/local/bin/k3s`,
-restore the binary's SELinux context:
+If K3s fails to start with `permission denied` on `/usr/local/bin/k3s`
+(seen in `journalctl -u k3s`: `Unable to locate executable
+'/usr/local/bin/k3s': Permission denied`), restore the binary's SELinux
+context — the K3s installer copies the binary into `/var/usrlocal/bin`
+with the `user_tmp_t` label which the systemd unit can't exec:
 
 ```bash
-sudo chcon -t bin_t /usr/local/bin/k3s
+sudo restorecon -v /usr/local/bin/k3s
 sudo systemctl restart k3s
 ```
 
-## 2. Install the NetworkPolicy enforcer (kube-router)
+(`restorecon` resets the label to `container_runtime_exec_t`, which is
+what the bundled SELinux policy expects.)
+
+## 2a. (only if GHCR packages are private) GHCR pull secret
+
+The CI workflow pushes images to `ghcr.io/ryxwaer/dp-reality/<svc>`.
+GHCR packages are private by default. The cluster needs either:
+
+- Public packages (no pull secret needed) — flip each package on
+  <https://github.com/Ryxwaer?tab=packages> → package settings →
+  Change visibility → Public; **or**
+- A pull secret using a GitHub PAT with `read:packages`:
+
+```bash
+PAT='ghp_***********************************'
+kubectl -n dp-reality create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io \
+  --docker-username=Ryxwaer \
+  --docker-password="$PAT" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n dp-reality patch serviceaccount default \
+  -p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}'
+```
+
+The PAT path is what the current cluster uses. Rotate by replacing the
+secret in place; pods pick up the new credential on next pull.
+
+## 2b. Install the NetworkPolicy enforcer (kube-router)
 
 K3s ships Flannel as the CNI, which **does not enforce
 NetworkPolicies**. The `k3s/base/networkpolicies/` manifests in this
@@ -126,6 +157,33 @@ Verify:
 kubectl -n kube-system get ds kube-router
 kubectl -n kube-system logs -l k8s-app=kube-router --tail=20
 ```
+
+### When MongoDB / RabbitMQ are applied before their Secrets exist
+
+The container entrypoints bootstrap their on-disk state from the env
+vars in their Secrets on the FIRST boot only. If you apply the
+manifests before populating the Secrets (step 4 below), `mongod`
+materialises the keyfile as the literal string `REPLACE_ME` and
+RabbitMQ creates no admin user. The recovery is to wipe the PVC and
+let the pod re-init clean:
+
+```bash
+# MongoDB
+kubectl -n dp-reality scale sts mongodb --replicas=0
+kubectl -n dp-reality delete pvc data-mongodb-0
+kubectl -n dp-reality scale sts mongodb --replicas=1
+
+# RabbitMQ
+kubectl -n dp-reality scale sts rabbitmq --replicas=0
+kubectl -n dp-reality delete pvc data-rabbitmq-0
+kubectl -n dp-reality scale sts rabbitmq --replicas=1
+```
+
+The cleanest install order (no recovery needed) is: apply manifests
+in step 3, populate Secrets in step 4 BEFORE the pods get past
+`ImagePullBackOff` / `CreateContainerConfigError`. The pods don't
+actually start until both the image is pullable AND the Secret values
+exist, so the first-boot bootstrap then sees real values.
 
 ## 3. Apply the workload manifests
 
@@ -250,7 +308,10 @@ In nginx-proxy-manager's UI, edit the `reality.ryxwaer.com`
 proxy host:
 
 - **Scheme**: `http`
-- **Forward Hostname / IP**: `127.0.0.1` (NPM and K3s share the host)
+- **Forward Hostname / IP**: `192.168.1.138` (the host's primary LAN
+  IP — NOT `127.0.0.1`, since inside the NPM container that resolves
+  to NPM's own loopback). `172.17.0.1` (the default `docker0` bridge
+  gateway) also works.
 - **Forward Port**: `30080`
 - **Cache assets**: off
 - **WebSocket support**: on  (the inbox uses SSE, which NPM treats as
@@ -260,6 +321,13 @@ proxy host:
 
 Verify in a browser: `https://reality.ryxwaer.com/` → K3s frontend
 serves the login page.
+
+Smoke test from the host:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" https://reality.ryxwaer.com/api/healthz   # 200
+curl -sS https://reality.ryxwaer.com/api/modules/registry                            # 2 bot rows
+```
 
 ## 7. Final sanity check
 
