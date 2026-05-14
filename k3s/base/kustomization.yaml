@@ -38,6 +38,7 @@ resources:
 
   - frontend/deployment.yaml
   - frontend/service.yaml
+  - frontend/ingress.yaml
 
   - networkpolicies/default-deny.yaml
   - networkpolicies/allow-dns.yaml

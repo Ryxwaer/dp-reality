@@ -1,0 +1,43 @@
+# `reality.ryxwaer.com` is exposed to the public internet by
+# `nginx-proxy-manager` (running in Docker on the host) which
+# terminates TLS and forwards plain HTTP to a NodePort on the
+# minisforum. With ingress-nginx installed, NPM now forwards to the
+# in-cluster ingress (NodePort 30090) and this Ingress routes the
+# request to the `frontend` Service. The two-hop topology lets
+# Flagger insert canary-specific routing into the Ingress without
+# touching NPM.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bff
+    app.kubernetes.io/name: frontend
+  annotations:
+    # NPM already terminated TLS; the controller sees plain HTTP and
+    # must trust the `X-Forwarded-Proto: https` header that NPM
+    # injects (matches `use-forwarded-headers: true` in the
+    # controller config).
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # SSE / long-poll friendliness for the BFF's notification stream.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Bots emit configuration HTML via the BFF proxy which may
+    # include large form fragments.
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: reality.ryxwaer.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

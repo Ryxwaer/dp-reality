@@ -8,19 +8,21 @@ spec:
     matchLabels:
       app.kubernetes.io/name: frontend
   policyTypes: [Ingress, Egress]
-  # Ingress: NodePort traffic enters via host network and kube-proxy
-  # rewrites the dest IP to the pod's IP. kube-router treats this as
-  # ingress from the node's address space, which is covered by the
-  # implicit allow-from-host-network rule. We add an explicit
-  # in-cluster allow from the kube-system Traefik replacement
-  # (currently nothing — Traefik is disabled in phase 1) so the
-  # policy remains correct when phase 2 reintroduces an Ingress.
+  # Ingress traffic now arrives via ingress-nginx (Phase B): the
+  # external NPM → NodePort 30090 (ingress-nginx) → this pod. The
+  # source IP at the NetworkPolicy layer is the ingress-nginx pod IP
+  # (cluster CIDR). The legacy direct NodePort 30080 path also still
+  # works for fallback testing and arrives via kube-proxy with the
+  # node IP as source.
   ingress:
     - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
         - ipBlock:
-            # Allow all source IPs reaching the pod. NodePort traffic
-            # from NPM arrives via kube-proxy and the source IP is
-            # SNAT'd; constraining further would break the prod path.
+            # Fallback: NodePort 30080 traffic (legacy NPM target) and
+            # any cluster-internal probe; constraining further would
+            # break liveness probes.
             cidr: 0.0.0.0/0
       ports:
         - { protocol: TCP, port: 3000 }
