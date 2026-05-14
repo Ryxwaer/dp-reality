@@ -14,7 +14,8 @@ const querySchema = z.object({
 interface NotificationRow extends Document {
   _id: ObjectId
   user_id: string
-  config_id: string
+  bot_id: string
+  config_ids?: string[]
   source_ref: string
   title: string
   url: string
@@ -47,7 +48,8 @@ export default defineEventHandler(async (event): Promise<NotificationDoc[]> => {
   return docs.map(d => ({
     id: d._id.toHexString(),
     user_id: d.user_id ?? '',
-    config_id: d.config_id ?? '',
+    bot_id: d.bot_id ?? '',
+    config_ids: d.config_ids ?? [],
     source_ref: d.source_ref ?? '',
     title: d.title ?? '',
     url: d.url ?? '',

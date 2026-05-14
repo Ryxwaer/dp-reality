@@ -20,7 +20,6 @@ from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING, UpdateOne
-from pymongo.errors import BulkWriteError
 
 from .config import settings
 from .models import Listing, listing_to_dict
@@ -49,16 +48,16 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await config.create_index("user_id", background=True)
     await config.create_index("active", background=True)
 
-    # The (user_id, config_id, source_ref) unique index is owned jointly
+    # The (user_id, bot_id, source_ref) unique index is owned jointly
     # by everyone writing into `notifications`; we declare it here so
     # the bot service can boot against a pristine DB without racing the
     # BFF index plugin.
     notifications = db[NOTIFICATIONS_COLLECTION]
     await notifications.create_index(
-        [("user_id", ASCENDING), ("config_id", ASCENDING), ("source_ref", ASCENDING)],
+        [("user_id", ASCENDING), ("bot_id", ASCENDING), ("source_ref", ASCENDING)],
         unique=True,
         background=True,
-        name="user_config_source_unique",
+        name="user_bot_source_unique",
     )
     await notifications.create_index(
         [("user_id", ASCENDING), ("created_at", DESCENDING)],
@@ -174,22 +173,42 @@ async def mark_welcome_sent(db: AsyncIOMotorDatabase, config_id: str) -> None:
 async def insert_notifications(
     db: AsyncIOMotorDatabase, rows: list[dict[str, Any]]
 ) -> int:
-    """Append rows to `notifications`; (user_id, config_id, source_ref)
-    duplicates are silently dropped via the unique index.
+    """Idempotent upsert keyed on (user_id, bot_id, source_ref).
+
+    A second matching configuration of the same user does NOT create a
+    duplicate row — it grows the existing row's `config_ids` array via
+    `$addToSet`. Returns the number of newly created rows.
     """
     if not rows:
         return 0
-    try:
-        result = await db[NOTIFICATIONS_COLLECTION].insert_many(rows, ordered=False)
-        return len(result.inserted_ids)
-    except BulkWriteError as exc:
-        # E11000 = duplicate key, the only error we tolerate here.
-        write_errors = exc.details.get("writeErrors", []) if exc.details else []
-        non_dup = [e for e in write_errors if e.get("code") != 11000]
-        if non_dup:
-            raise
-        inserted = exc.details.get("nInserted", 0) if exc.details else 0
-        return int(inserted)
+    now = datetime.now(UTC)
+    operations = [
+        UpdateOne(
+            {
+                "user_id": r["user_id"],
+                "bot_id": r["bot_id"],
+                "source_ref": r["source_ref"],
+            },
+            {
+                "$setOnInsert": {
+                    "user_id": r["user_id"],
+                    "bot_id": r["bot_id"],
+                    "source_ref": r["source_ref"],
+                    "title": r["title"],
+                    "url": r["url"],
+                    "html": r["html"],
+                    "created_at": now,
+                    "unread": True,
+                    "sent_at": None,
+                },
+                "$addToSet": {"config_ids": r["config_id"]},
+            },
+            upsert=True,
+        )
+        for r in rows
+    ]
+    result = await db[NOTIFICATIONS_COLLECTION].bulk_write(operations, ordered=False)
+    return int(len(result.upserted_ids or {}))
 
 
 async def upsert_registry(db: AsyncIOMotorDatabase) -> None:

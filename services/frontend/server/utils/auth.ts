@@ -9,8 +9,9 @@ import type { BotMeta } from '~~/shared/types'
 // identifiers carry distinct meanings:
 //   - config_id: per-configuration handle (also _id in <service>_config)
 //   - bot_id:    bot service type (compose / k8s service name)
-export interface StoredBot extends Omit<BotMeta, 'created_at'> {
+export interface StoredBot extends Omit<BotMeta, 'created_at' | 'expires_at'> {
   created_at: Date | string
+  expires_at?: Date | string | null
 }
 
 export interface UserRecord extends Document {

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { requireUser } from '~~/server/utils/auth'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
 import { findRegistryEntry } from '~~/server/utils/registry'
+import { nextBotExpiry } from '~~/server/utils/bot-expiry'
 import type { StoredBot } from '~~/server/utils/auth'
 
 const bodySchema = z.object({
@@ -65,6 +66,14 @@ export default defineEventHandler(async (event) => {
     set['bots.$[bot].email_notifications'] = body.email_notifications
   }
   if (body.status !== undefined) set['bots.$[bot].status'] = body.status
+
+  // Visit-to-refresh (FR-02-B): every transition INTO `active` from
+  // either the provisional `pending` reservation or a `stopped` row
+  // stamps a fresh `expires_at`. The daily sweep (deferred) will flip
+  // rows whose expiry has passed back to `stopped`.
+  if (body.status === 'active' && existing.status !== 'active') {
+    set['bots.$[bot].expires_at'] = nextBotExpiry()
+  }
 
   const result = await db.collection(COLLECTIONS.users).updateOne(
     { _id: user._id },

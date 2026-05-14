@@ -14,7 +14,6 @@ conventions document (max width 600px, image cap 480px, neutral palette).
 from __future__ import annotations
 
 import html as html_lib
-from datetime import datetime, UTC
 from typing import Any
 
 from .models import Listing
@@ -91,17 +90,20 @@ def render_card(listing: Listing) -> str:
 
 
 def build_notification(
-    *, user_id: str, config_id: str, listing: Listing
+    *, user_id: str, bot_id: str, config_id: str, listing: Listing
 ) -> dict[str, Any]:
-    """Compose the shared `notifications` row for one match."""
+    """Compose the per-match payload consumed by `insert_notifications`.
+
+    Only the identifying + rendered fields are returned; the repository
+    layer is responsible for `$setOnInsert` of `created_at`/`unread`/
+    `sent_at` and the `$addToSet` on `config_ids`.
+    """
     return {
         "user_id": user_id,
+        "bot_id": bot_id,
         "config_id": config_id,
         "source_ref": f"bazos:{listing.source_id}",
         "title": listing.title,
         "url": listing.source_url,
         "html": render_card(listing),
-        "created_at": datetime.now(UTC),
-        "unread": True,
-        "sent_at": None,
     }

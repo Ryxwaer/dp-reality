@@ -85,8 +85,8 @@ export default defineNitroPlugin(async () => {
   // pristine DB doesn't race them.
   await ensureIndexes(db.collection(COLLECTIONS.notifications), [
     {
-      key: { user_id: 1, config_id: 1, source_ref: 1 },
-      name: 'user_config_source_unique',
+      key: { user_id: 1, bot_id: 1, source_ref: 1 },
+      name: 'user_bot_source_unique',
       unique: true
     },
     { key: { user_id: 1, created_at: -1 }, name: 'user_recent' },

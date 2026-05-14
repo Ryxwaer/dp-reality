@@ -22,6 +22,7 @@ export function shapeBot(raw: StoredBot): BotMeta {
     name: raw.name,
     status: toStatus(raw),
     email_notifications: raw.email_notifications ?? true,
-    created_at: toIso(raw.created_at) ?? ''
+    created_at: toIso(raw.created_at) ?? '',
+    expires_at: toIso(raw.expires_at)
   }
 }

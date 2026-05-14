@@ -15,7 +15,7 @@ This repo is implementation of project documented at `/home/ryxwaer/Documents/SK
 
 # Deployemnt
 
-- minisforum server: `ssh minisforum`
+- minisforum server: `ssh minisforum` (do not deploy by yourself - rather notify user to do it)
 
 # Comments
 - Do not write comments explaining change you did unless it is something that can not be understood from code itself

@@ -12,7 +12,7 @@
 // The AMQP `ack` is deferred until the digest has been sent AND the
 // affected notification rows have been marked sent_at. If anything in
 // that chain fails, the message is `Nack`'d for redelivery; the
-// (user_id, config_id, source_ref) unique index keeps inserts
+// (user_id, bot_id, source_ref) unique index keeps inserts
 // idempotent and we never lose a row.
 package consumer
 
@@ -157,22 +157,19 @@ func (s *Service) flush(ctx context.Context, userID, botID string) error {
 		return fmt.Errorf("fetch user: %w", err)
 	}
 
-	// Collect every config of this user that belongs to the firing bot
-	// and is still active + opted-in. The bot service emits one event
-	// per (user, bot, run) regardless of how many configs matched, so
-	// the digest is the single envelope covering all of them.
+	// Confirm the user has at least one active + opted-in config for
+	// the firing bot. With the (user_id, bot_id, source_ref) unique
+	// index, the notification row is already deduplicated across the
+	// user's configs of this bot, so the digest is a single envelope
+	// covering every matching listing for this (user, bot) cycle.
 	configs := configsForBot(user.Bots, botID)
 	if len(configs) == 0 {
 		slog.Info("no opted-in configs for bot on this user, skipping",
 			"user_id", userID, "bot_id", botID)
 		return nil
 	}
-	configIDs := make([]string, 0, len(configs))
-	for _, b := range configs {
-		configIDs = append(configIDs, b.ConfigID)
-	}
 
-	rows, err := s.repo.FetchUnsentForConfigs(ctx, userID, configIDs)
+	rows, err := s.repo.FetchUnsentForBot(ctx, userID, botID)
 	if err != nil {
 		return fmt.Errorf("fetch unsent: %w", err)
 	}

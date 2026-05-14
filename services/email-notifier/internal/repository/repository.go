@@ -33,12 +33,16 @@ const (
 // the per-user, BFF-minted identifier carried on every event from the
 // bot service; `BotID` is the platform-wide service identifier (the
 // compose / k8s service name) advertised in module_registry.
+// `ExpiresAt` carries the visit-to-refresh expiry (FR-02-B); the
+// notifier never writes it but round-trips it so any future read path
+// can rely on it being present.
 type Bot struct {
-	ConfigID           string `bson:"config_id"`
-	BotID              string `bson:"bot_id"`
-	Name               string `bson:"name"`
-	Status             string `bson:"status"`
-	EmailNotifications bool   `bson:"email_notifications"`
+	ConfigID           string     `bson:"config_id"`
+	BotID              string     `bson:"bot_id"`
+	Name               string     `bson:"name"`
+	Status             string     `bson:"status"`
+	EmailNotifications bool       `bson:"email_notifications"`
+	ExpiresAt          *time.Time `bson:"expires_at,omitempty"`
 }
 
 // User mirrors the BFF's users collection. Only the fields the
@@ -52,12 +56,15 @@ type User struct {
 
 // Notification is the row written by a bot service. We treat the
 // `html` blob as opaque; matcher fields and source schemas are out of
-// scope for this service. `ConfigID` ties the row back to the user's
-// configuration that produced the match.
+// scope for this service. The `(user_id, bot_id, source_ref)` unique
+// index collapses two matching configs of the same user/bot/listing
+// into a single row; `ConfigIDs` is the audit trail of which configs
+// of the user flagged the listing.
 type Notification struct {
 	ID        bson.ObjectID `bson:"_id"`
 	UserID    string        `bson:"user_id"`
-	ConfigID  string        `bson:"config_id"`
+	BotID     string        `bson:"bot_id"`
+	ConfigIDs []string      `bson:"config_ids"`
 	SourceRef string        `bson:"source_ref"`
 	Title     string        `bson:"title"`
 	URL       string        `bson:"url"`
@@ -90,19 +97,18 @@ func (r *Repository) FetchUser(ctx context.Context, userID string) (*User, error
 	return &u, nil
 }
 
-// FetchUnsentForConfigs returns notifications for `userID` whose
-// `config_id` is in `configIDs` and that have not yet been emailed.
-// Sorted oldest-first so the envelope reads chronologically. The
-// caller decides which configs are relevant — typically all configs
-// of a single bot service that the user has not opted out of.
-func (r *Repository) FetchUnsentForConfigs(ctx context.Context, userID string, configIDs []string) ([]Notification, error) {
-	if len(configIDs) == 0 {
-		return nil, nil
-	}
+// FetchUnsentForBot returns notifications for `userID` belonging to
+// `botID` that have not yet been emailed. Sorted oldest-first so the
+// envelope reads chronologically. The dedup key on the row is
+// `(user_id, bot_id, source_ref)`, so a single row already covers all
+// of the user's configs of that bot that matched the listing; the
+// caller's per-config gating only needs to decide whether ANY of the
+// user's configs of this bot is currently opted-in.
+func (r *Repository) FetchUnsentForBot(ctx context.Context, userID, botID string) ([]Notification, error) {
 	cursor, err := r.db.Collection(notificationsCol).Find(ctx,
 		bson.D{
 			{Key: "user_id", Value: userID},
-			{Key: "config_id", Value: bson.D{{Key: "$in", Value: configIDs}}},
+			{Key: "bot_id", Value: botID},
 			{Key: "sent_at", Value: nil},
 		},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}),

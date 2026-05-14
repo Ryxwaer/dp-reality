@@ -1,6 +1,7 @@
 import { compare } from 'bcryptjs'
 import { z } from 'zod'
 import { getDb, COLLECTIONS } from '~~/server/utils/db'
+import { bumpExpiresAt } from '~~/server/utils/bot-expiry'
 import type { UserRecord } from '~~/server/utils/auth'
 
 const schema = z.object({
@@ -24,6 +25,12 @@ export default defineEventHandler(async (event) => {
   if (!ok) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid credentials' })
   }
+
+  // Visit-to-refresh (FR-02-B): every login pushes the expiry of all
+  // of the user's `active` bots forward. A user who stops logging in
+  // will see their active bots transition to `stopped` once the daily
+  // sweep (deferred) catches up.
+  await bumpExpiresAt(doc._id)
 
   await setUserSession(event, {
     user: {

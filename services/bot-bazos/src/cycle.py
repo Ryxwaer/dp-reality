@@ -62,7 +62,7 @@ async def _match_and_notify(
         return
 
     new_listings = list(new_listings)
-    matches_by_config: dict[tuple[str, str], list[Listing]] = defaultdict(list)
+    rows_by_user: dict[str, list[dict]] = defaultdict(list)
 
     for cfg_doc in configs:
         try:
@@ -74,20 +74,23 @@ async def _match_and_notify(
         user_id = str(cfg_doc["user_id"])
         for listing in new_listings:
             if matcher.matches(cfg, listing):
-                matches_by_config[(user_id, config_id)].append(listing)
+                rows_by_user[user_id].append(
+                    notifications.build_notification(
+                        user_id=user_id,
+                        bot_id=settings.service_id,
+                        config_id=config_id,
+                        listing=listing,
+                    )
+                )
 
-    # First pass: insert notification rows per (user, config). Then
-    # collapse to one event per user — the cycle is what completed,
-    # not any individual config — so downstream consumers see at most
-    # one notify.bot.processed per (user, bot, run).
+    # The repository upsert collapses two matching configs of the same
+    # user/bot/listing into a single row (config_ids[] tracks which
+    # configs hit). Emit exactly one notify.bot.processed per user for
+    # which at least one new row was created in this cycle.
     users_with_inserts: set[str] = set()
-    for (user_id, config_id), listings_for_cfg in matches_by_config.items():
-        rows = [
-            notifications.build_notification(
-                user_id=user_id, config_id=config_id, listing=l
-            )
-            for l in listings_for_cfg
-        ]
+    for user_id, rows in rows_by_user.items():
+        if not rows:
+            continue
         inserted = await repository.insert_notifications(db, rows)
         if inserted > 0:
             users_with_inserts.add(user_id)

@@ -143,7 +143,7 @@ func SendDigest(cfg config.Config, user repository.User, bot repository.Bot, row
 		return err
 	}
 	slog.Info("digest sent",
-		"user", user.Email, "config_id", bot.ConfigID, "bot_id", bot.BotID, "rows", len(rows))
+		"user", user.Email, "bot_id", bot.BotID, "rows", len(rows))
 	return nil
 }
 

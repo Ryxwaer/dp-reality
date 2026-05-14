@@ -80,18 +80,16 @@ export class NotificationRendererService {
     );
   }
 
-  buildNotification(input: { userId: string; configId: string; listing: Listing }) {
-    const { userId, configId, listing } = input;
+  buildNotification(input: { userId: string; botId: string; configId: string; listing: Listing }) {
+    const { userId, botId, configId, listing } = input;
     return {
       user_id: userId,
+      bot_id: botId,
       config_id: configId,
       source_ref: `sreality:${listing._id}`,
       title: listing.title,
       url: listing.source_url,
       html: this.renderCard(listing),
-      created_at: new Date(),
-      unread: true,
-      sent_at: null,
     };
   }
 }

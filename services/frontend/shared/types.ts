@@ -33,6 +33,11 @@ export interface BotMeta {
   status: BotStatus
   email_notifications: boolean
   created_at: string
+  /** Visit-to-refresh expiry (FR-02-B). `null` while the row is still
+   *  provisional (status='pending') and after a terminal `deleted`
+   *  state; otherwise the daily sweep flips `active` rows past this
+   *  timestamp to `stopped`. */
+  expires_at: string | null
 }
 
 /** module_registry document — one per advertised bot service.
@@ -61,14 +66,17 @@ export interface ModuleRegistryEntry {
 
 /**
  * Notifications inbox row — written by bot services (one per matched
- * listing per config per user), read by the BFF (inbox UI) and by the
- * email notifier (envelope assembly). `config_id` ties the row back to
- * the user-owned configuration that produced it.
+ * listing per user per bot service), read by the BFF (inbox UI) and by
+ * the email notifier (envelope assembly). The composite unique index
+ * `(user_id, bot_id, source_ref)` collapses multiple matching configs
+ * of the same user/bot into a single row; `config_ids[]` is the set of
+ * the user's configurations that flagged the listing.
  */
 export interface NotificationDoc {
   id: string
   user_id: string
-  config_id: string
+  bot_id: string
+  config_ids: string[]
   source_ref: string
   title: string
   url: string

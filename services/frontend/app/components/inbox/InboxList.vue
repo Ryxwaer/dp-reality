@@ -2,16 +2,13 @@
 import { format, isToday } from 'date-fns'
 import type { NotificationDoc } from '~~/shared/types'
 
-interface BotLabels {
-  name: string
-  bot_id: string
-  serviceLabel: string
-}
-
 const props = defineProps<{
   notifications: NotificationDoc[]
   selected: NotificationDoc | null
-  botLabels: Map<string, BotLabels>
+  // Registry display names keyed by bot_id (the service id).
+  serviceLabels: Map<string, string>
+  // User-supplied per-configuration names keyed by config_id.
+  configNames: Map<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -46,11 +43,14 @@ defineShortcuts({
 })
 
 function badgeFor(n: NotificationDoc): string {
-  return props.botLabels.get(n.config_id)?.serviceLabel ?? 'unknown'
+  return props.serviceLabels.get(n.bot_id) ?? n.bot_id ?? 'unknown'
 }
 
 function botNameFor(n: NotificationDoc): string {
-  return props.botLabels.get(n.config_id)?.name ?? ''
+  const names = (n.config_ids ?? [])
+    .map(id => props.configNames.get(id))
+    .filter((name): name is string => !!name)
+  return names.join(' · ')
 }
 </script>
 

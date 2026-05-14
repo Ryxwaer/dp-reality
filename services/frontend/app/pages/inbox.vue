@@ -29,20 +29,23 @@ const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
   { default: () => ({ items: [] }), lazy: true }
 )
 
-// Map of config_id → display labels for the inbox rows. Service
-// display names come from the registry, bot names from /api/bots.
-const botLabels = computed(() => {
-  const serviceLabel = new Map<string, string>()
+// Service display names per bot_id (from the registry), config display
+// names per config_id (from the user's bots[]). The inbox row carries
+// `bot_id` + `config_ids[]` directly, so the per-row badge resolves
+// against `serviceLabels` and the per-row bot name lists the matching
+// configurations from `configNames`.
+const serviceLabels = computed(() => {
+  const out = new Map<string, string>()
   for (const r of registry.value?.items ?? []) {
-    serviceLabel.set(r.bot_id, r.display_name)
+    out.set(r.bot_id, r.display_name)
   }
-  const out = new Map<string, { name: string, bot_id: string, serviceLabel: string }>()
+  return out
+})
+
+const configNames = computed(() => {
+  const out = new Map<string, string>()
   for (const b of bots.value) {
-    out.set(b.config_id, {
-      name: b.name,
-      bot_id: b.bot_id,
-      serviceLabel: serviceLabel.get(b.bot_id) ?? b.bot_id
-    })
+    out.set(b.config_id, b.name)
   }
   return out
 })
@@ -91,12 +94,18 @@ async function onMarkAllRead() {
   }
 }
 
+function resolveConfigNames(ids: string[]): string {
+  const names = ids
+    .map(id => configNames.value.get(id))
+    .filter((n): n is string => !!n)
+  return names.join(' · ')
+}
+
 const selectedLabels = computed(() => {
   if (!selected.value) return { service: '', name: '' }
-  const lab = botLabels.value.get(selected.value.config_id)
   return {
-    service: lab?.serviceLabel ?? '',
-    name: lab?.name ?? ''
+    service: serviceLabels.value.get(selected.value.bot_id) ?? selected.value.bot_id,
+    name: resolveConfigNames(selected.value.config_ids ?? [])
   }
 })
 
@@ -158,7 +167,8 @@ const isMobile = breakpoints.smaller('lg')
     <InboxList
       :notifications="filteredNotifications"
       :selected="selected"
-      :bot-labels="botLabels"
+      :service-labels="serviceLabels"
+      :config-names="configNames"
       @select="onSelect"
     />
   </UDashboardPanel>

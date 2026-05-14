@@ -31,7 +31,7 @@ flowchart TB
         LoadConfigs["Load all rows from &lt;source&gt;_config<br>where active = true<br>(in-process per cycle;<br>BFF mutates this directly)"]
         MatchLoop["For each (new listing &times; active config):<br>evaluate filters in process<br>(matcher owned by bot service)"]
         Compose["Compose per-listing notification card:<br>render bot-owned HTML template<br>with sanitised listing fields"]
-        WriteNotif["Insert notifications row<br>{user_id, config_id, source_ref,<br>title, url, html, unread,<br>created_at, sent_at=null}<br>unique on (user_id, config_id, source_ref)"]
+        WriteNotif["Upsert notifications row<br>filter: (user_id, bot_id, source_ref)<br>$setOnInsert: {title, url, html, unread,<br>created_at, sent_at=null}<br>$addToSet config_ids<br>unique on (user_id, bot_id, source_ref)"]
         NotifCol[("MongoDB notifications<br>shared inbox + email staging table")]
         EmitEvent{{"RabbitMQ fanout exchange<br>notify.bot.processed<br>{user_id, bot_id, run_id}<br>(one event per (user, bot) per cycle,<br>collapsed across all of that user's<br>configs in this bot)"}}
   end

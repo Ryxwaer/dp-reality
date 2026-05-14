@@ -25,17 +25,33 @@ const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
   { default: () => ({ items: [] }), lazy: true }
 )
 
-const subtitle = computed(() => {
-  const serviceLabel = new Map<string, string>()
-  for (const r of registry.value?.items ?? []) {
-    serviceLabel.set(r.bot_id, r.display_name)
-  }
+// Per-row subtitle: "<service> · <config name>[ · <config name>]".
+// The notification row is deduplicated by (user, bot, listing), so
+// `config_ids[]` is the set of the user's configurations that flagged
+// the listing — render every name that resolves.
+const serviceLabels = computed(() => {
   const out = new Map<string, string>()
-  for (const b of bots.value) {
-    out.set(b.config_id, `${serviceLabel.get(b.bot_id) ?? b.bot_id} · ${b.name}`)
+  for (const r of registry.value?.items ?? []) {
+    out.set(r.bot_id, r.display_name)
   }
   return out
 })
+
+const configNames = computed(() => {
+  const out = new Map<string, string>()
+  for (const b of bots.value) {
+    out.set(b.config_id, b.name)
+  }
+  return out
+})
+
+function subtitleFor(n: NotificationDoc): string {
+  const service = serviceLabels.value.get(n.bot_id) ?? n.bot_id
+  const names = (n.config_ids ?? [])
+    .map(id => configNames.value.get(id))
+    .filter((name): name is string => !!name)
+  return names.length ? `${service} · ${names.join(' · ')}` : service
+}
 
 watch(isNotificationsSlideoverOpen, (open) => {
   if (open) refresh()
@@ -77,7 +93,7 @@ watch(isNotificationsSlideoverOpen, (open) => {
             </p>
 
             <p class="text-dimmed truncate">
-              {{ subtitle.get(notification.config_id) ?? 'unknown bot' }}
+              {{ subtitleFor(notification) }}
             </p>
           </div>
         </NuxtLink>

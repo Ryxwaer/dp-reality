@@ -101,60 +101,46 @@ export class RepositoryService {
     );
   }
 
+  // Idempotent upsert keyed on (user_id, bot_id, source_ref). A second
+  // matching configuration of the same user does NOT create a duplicate
+  // row — it grows the existing row's `config_ids` array via $addToSet.
+  // Returns the number of newly created rows (the others were already
+  // present, possibly with a different subset of config_ids).
   async insertNotifications(
-    rows: Array<Omit<NotificationRow, 'created_at' | 'unread' | 'sent_at'> & {
-      created_at?: Date;
-      unread?: boolean;
-      sent_at?: Date | null;
+    rows: Array<{
+      user_id: string;
+      bot_id: string;
+      config_id: string;
+      source_ref: string;
+      title: string;
+      url: string;
+      html: string;
     }>,
   ): Promise<number> {
     if (!rows.length) return 0;
-    const filled = rows.map((r) => ({
-      created_at: r.created_at ?? new Date(),
-      unread: r.unread ?? true,
-      sent_at: r.sent_at ?? null,
-      ...r,
+    const now = new Date();
+    const ops = rows.map((r) => ({
+      updateOne: {
+        filter: { user_id: r.user_id, bot_id: r.bot_id, source_ref: r.source_ref },
+        update: {
+          $setOnInsert: {
+            user_id: r.user_id,
+            bot_id: r.bot_id,
+            source_ref: r.source_ref,
+            title: r.title,
+            url: r.url,
+            html: r.html,
+            created_at: now,
+            unread: true,
+            sent_at: null,
+          },
+          $addToSet: { config_ids: r.config_id },
+        },
+        upsert: true,
+      },
     }));
-    try {
-      const inserted = await this.notificationModel.insertMany(filled, { ordered: false });
-      return inserted.length;
-    } catch (err) {
-      // The (user_id, config_id, source_ref) unique index makes re-runs
-      // idempotent. With `ordered: false`, Mongoose surfaces dup-key
-      // failures in a few different shapes depending on whether SOME
-      // or ALL docs collided. We accept all of them as "no-op for the
-      // dup'd rows" and only re-throw on genuinely unexpected errors.
-      const e = err as {
-        code?: number;
-        message?: string;
-        name?: string;
-        insertedDocs?: unknown[];
-        writeErrors?: Array<{ code?: number; err?: { code?: number } }>;
-        result?: { insertedCount?: number; nInserted?: number };
-      };
-      const writeErrors = e.writeErrors ?? [];
-      const nonDup = writeErrors.filter((w) => {
-        const code = w.code ?? w.err?.code;
-        return code !== 11000;
-      });
-      const isAllDup =
-        e.code === 11000
-        || (typeof e.message === 'string' && e.message.includes('E11000'));
-      if (nonDup.length === 0 && (writeErrors.length > 0 || isAllDup)) {
-        const inserted =
-          e.insertedDocs?.length
-          ?? e.result?.insertedCount
-          ?? e.result?.nInserted
-          ?? 0;
-        if (writeErrors.length > 0 || inserted === 0) {
-          this.logger.debug(
-            `insertNotifications: ${writeErrors.length || rows.length} dup row(s) ignored, ${inserted} inserted`,
-          );
-        }
-        return inserted;
-      }
-      throw err;
-    }
+    const result = await this.notificationModel.bulkWrite(ops, { ordered: false });
+    return result.upsertedCount ?? 0;
   }
 
   // One-shot self-registration on boot. The platform contract treats
