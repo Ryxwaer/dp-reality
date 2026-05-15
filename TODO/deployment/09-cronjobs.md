@@ -15,7 +15,7 @@ Move the two periodic platform routines into K3s CronJobs:
   cluster-wide instead of one per replica).
 
 ## Dependencies
-- `deployment/01-k3s-manifests.md` (frontend image exists).
+- `k3s/base/frontend/deployment.yaml` (frontend image exists; the CronJob reuses the same image so the BFF code in `services/frontend/server/` is the place to put the sweep entrypoint).
 - `platform/01-expires-at-daily-sweep.md` (the standalone script
   `scripts/sweep-expired-bots.mjs` exists in the frontend image).
 

@@ -33,8 +33,12 @@ matcher, notification renderer, welcome flow, HTTP API (configure
 page + helper endpoints + configs read/write), module registry
 self-registration, and platform-mandated indexes.
 Out: BFF changes (the registry-driven discovery already handles new
-modules transparently). Out: K3s manifests (covered in
-`deployment/01-k3s-manifests.md`).
+modules transparently). Out: K3s manifests — copy the `k3s/base/bot-bazos/` directory to
+`k3s/base/bot-bezrealitky/`, swap the names, and add the new entry
+to `k3s/base/kustomization.yaml` and the bot NetworkPolicies
+(podSelector matches by `app.kubernetes.io/component: bot`, so no
+policy change is needed beyond ensuring the new pod carries that
+label).
 
 ## Language and shape
 **Pick Python/FastAPI**, mirroring `bot-bazos` rather than

@@ -19,10 +19,10 @@ mailer at the dev SMTP server, and enables `docker compose watch`
 live-reload blocks. `compose.yml` is reserved for production.
 
 The frontend is built from `services/frontend/Dockerfile.dev` (single
-stage, runs `nuxt dev` with Vite HMR) so edits under `services/frontend/`
-are synced into the container by `--watch` and hot-reload in the
-browser — no rebuild needed. `package.json` / `pnpm-lock.yaml` changes
-trigger a rebuild. The Python bots use `sync+restart` / `rebuild`
+stage, runs `bun run dev` which boots `nuxt dev` with Vite HMR) so
+edits under `services/frontend/` are synced into the container by
+`--watch` and hot-reload in the browser — no rebuild needed.
+`package.json` / `bun.lock` changes trigger a rebuild. The Python bots use `sync+restart` / `rebuild`
 actions; see their `develop.watch` blocks for specifics.
 
 - Dashboard: http://localhost:3000

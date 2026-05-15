@@ -105,7 +105,6 @@ services:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
-      NUXT_SESSION_PASSWORD: ${NUXT_SESSION_PASSWORD}
     depends_on:
       rabbitmq:
         condition: service_healthy

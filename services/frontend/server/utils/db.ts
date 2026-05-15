@@ -44,5 +44,6 @@ export async function getDb(): Promise<Db> {
 export const COLLECTIONS = {
   users: 'users',
   notifications: 'notifications',
-  moduleRegistry: 'module_registry'
+  moduleRegistry: 'module_registry',
+  sessions: 'sessions'
 } as const

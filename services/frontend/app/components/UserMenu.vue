@@ -8,6 +8,7 @@ defineProps<{
 const colorMode = useColorMode()
 const appConfig = useAppConfig()
 const { user, clear: clearSession } = useUserSession()
+const { headers: csrfHeaders } = useCsrf()
 const toast = useToast()
 
 const colors = ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose']
@@ -21,7 +22,10 @@ const avatar = computed(() => ({
 
 async function onLogout() {
   try {
-    await $fetch('/api/auth/logout', { method: 'POST' })
+    await $fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: csrfHeaders()
+    })
   } catch {
     // fall through to local clear regardless
   }

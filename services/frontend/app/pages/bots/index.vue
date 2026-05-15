@@ -14,6 +14,7 @@ const UDropdownMenu = resolveComponent('UDropdownMenu')
 const UIcon = resolveComponent('UIcon')
 
 const toast = useToast()
+const { headers: csrfHeaders } = useCsrf()
 const table = useTemplateRef('table')
 
 const columnFilters = ref([{ id: 'name', value: '' }])
@@ -60,7 +61,11 @@ function closeConfig() {
 
 async function patchBot(bot: BotMeta, patch: Partial<Pick<BotMeta, 'status' | 'email_notifications'>>) {
   try {
-    await $fetch(`/api/bots/${bot.config_id}`, { method: 'PATCH', body: patch })
+    await $fetch(`/api/bots/${bot.config_id}`, {
+      method: 'PATCH',
+      headers: csrfHeaders(),
+      body: patch
+    })
     await refresh()
   } catch {
     toast.add({ title: 'Could not update bot', color: 'error' })
@@ -87,7 +92,10 @@ async function toggleEmail(bot: BotMeta) {
 
 async function deleteBot(bot: BotMeta) {
   try {
-    await $fetch(`/api/bots/${bot.config_id}`, { method: 'DELETE' })
+    await $fetch(`/api/bots/${bot.config_id}`, {
+      method: 'DELETE',
+      headers: csrfHeaders()
+    })
     await refresh()
     toast.add({ title: 'Bot deleted', color: 'success' })
   } catch {

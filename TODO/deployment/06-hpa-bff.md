@@ -16,7 +16,7 @@ demonstrates the mechanism.
   > configuration popups, SSE connections)."
 
 ## Dependencies
-- `deployment/01-k3s-manifests.md` (frontend Deployment exists).
+- `k3s/base/frontend/deployment.yaml` (frontend Deployment exists).
 - `deployment/02-node-placement-and-resources.md` (resource requests
   exist — HPA's CPU metric is a percentage of *request*).
 - `security/01-mongo-backed-sessions.md` (sessions in Mongo — without

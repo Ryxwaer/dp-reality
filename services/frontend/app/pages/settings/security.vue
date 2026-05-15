@@ -14,6 +14,7 @@ const saving = ref(false)
 const deleting = ref(false)
 const toast = useToast()
 const { clear: clearSession } = useUserSession()
+const { headers: csrfHeaders } = useCsrf()
 
 const validate = (state: Partial<PasswordSchema>): FormError[] => {
   const errors: FormError[] = []
@@ -26,7 +27,11 @@ const validate = (state: Partial<PasswordSchema>): FormError[] => {
 async function onSubmit(event: FormSubmitEvent<PasswordSchema>) {
   saving.value = true
   try {
-    await $fetch('/api/auth/password', { method: 'POST', body: event.data })
+    await $fetch('/api/auth/password', {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: event.data
+    })
     password.current = ''
     password.new = ''
     toast.add({ title: 'Password updated', color: 'success' })
@@ -44,7 +49,10 @@ async function onDelete() {
   if (!confirm('Delete your account? This cannot be undone.')) return
   deleting.value = true
   try {
-    await $fetch('/api/user', { method: 'DELETE' })
+    await $fetch('/api/user', {
+      method: 'DELETE',
+      headers: csrfHeaders()
+    })
     await clearSession()
     await navigateTo('/login')
   } catch {

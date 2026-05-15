@@ -87,8 +87,10 @@ Each Dockerfile needs a brief audit:
 - **email-notifier** (`golang:1.23-alpine` → `alpine:3.20`): Go is
   natively cross. Just ensure `GOARCH` is not pinned to amd64. The
   current Dockerfile uses `GOOS=linux` only, which is correct.
-- **frontend** (`node:22-alpine` with `pnpm`): clean. Node 22-alpine
-  has arm64 variants.
+- **frontend** (`oven/bun:1-alpine` builder → `node:22-alpine` runtime):
+  clean. Both images publish arm64 variants. Bun builds the Nitro
+  output; node runs it. Watch the bun base image gets picked up on
+  arm64 — buildx should select the right manifest automatically.
 
 ### Pinning
 The CI runs `latest` plus `sha`-tagged images. Production manifests

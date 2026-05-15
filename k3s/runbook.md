@@ -285,14 +285,15 @@ kubectl -n dp-reality patch secret email-notifier --type=merge -p "$(cat <<EOF
 EOF
 )"
 
-# Frontend: Mongo, Rabbit, session password, unsubscribe secret.
-# The unsubscribe secret MUST match email-notifier's.
+# Frontend: Mongo, Rabbit, unsubscribe secret. Sessions live in Mongo
+# now (collection `sessions`), so no shared cookie-sealing key is
+# required across replicas. The unsubscribe secret MUST match
+# email-notifier's.
 UNSUB="$(kubectl -n dp-reality get secret email-notifier -o jsonpath='{.data.UNSUBSCRIBE_SECRET}' | base64 -d)"
 kubectl -n dp-reality create secret generic frontend \
   --from-literal=NUXT_MONGODB_URI="$MONGO_URI" \
   --from-literal=NUXT_RABBITMQ_URL="$RMQ_URL" \
   --from-literal=NUXT_UNSUBSCRIBE_SECRET="$UNSUB" \
-  --from-literal=NUXT_SESSION_PASSWORD="$(openssl rand -hex 32)" \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 

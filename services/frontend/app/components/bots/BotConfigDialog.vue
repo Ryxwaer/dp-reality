@@ -43,6 +43,7 @@ const emit = defineEmits<{
 
 const colorMode = useColorMode()
 const toast = useToast()
+const { headers: csrfHeaders } = useCsrf()
 
 const step = ref<1 | 2>(props.isNew ? 1 : 2)
 const formName = ref(props.bot?.name ?? '')
@@ -114,6 +115,7 @@ async function next() {
   try {
     const bot = await $fetch<BotMeta>('/api/bots', {
       method: 'POST',
+      headers: csrfHeaders(),
       body: {
         bot_id: props.registry.bot_id,
         name,
@@ -137,6 +139,7 @@ async function onSaved() {
     try {
       await $fetch(`/api/bots/${minted.value.config_id}`, {
         method: 'PATCH',
+        headers: csrfHeaders(),
         body: { status: 'active' }
       })
     } catch {
@@ -157,7 +160,10 @@ async function cancel() {
     // any <bot>_config the bot may have already written).
     if (props.isNew && minted.value) {
       try {
-        await $fetch(`/api/bots/${minted.value.config_id}`, { method: 'DELETE' })
+        await $fetch(`/api/bots/${minted.value.config_id}`, {
+          method: 'DELETE',
+          headers: csrfHeaders()
+        })
       } catch (err) {
         // Best-effort: the janitor reaps any orphan within minutes.
         console.error('[bot-config] cancel cleanup failed:', err)

@@ -27,9 +27,8 @@ In: add the daily sweep, plumbed in two places (K3s CronJob for prod,
 Nitro scheduled task for the dev compose stack — see notes below).
 Out: changing `BOT_EXPIRES_TTL_MS`, changing the field shape, changing
 the bump semantics on login. Out: writing the K3s CronJob YAML — that
-lives under `deployment/02-node-placement-and-resources.md` and
-`deployment/01-k3s-manifests.md`. This task only produces the binary
-that the CronJob will exec.
+lives under `deployment/09-cronjobs.md`. This task only produces the
+binary that the CronJob will exec.
 
 ## Concrete changes
 

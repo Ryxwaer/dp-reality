@@ -35,15 +35,9 @@ export default defineEventHandler(async (event) => {
     { $set: update }
   )
 
-  // Refresh the session payload so UI stays in sync.
-  await setUserSession(event, {
-    user: {
-      id: user._id.toHexString(),
-      email: (update.email as string) ?? user.email,
-      name: (update.name as string) ?? user.name
-    },
-    loggedInAt: new Date().toISOString()
-  })
-
+  // No session refresh is needed — the cookie carries only the opaque
+  // session id; the next /api/_auth/session call reads the updated
+  // user document directly from Mongo. The client triggers that
+  // refresh via `useUserSession().fetch()` after this returns.
   return { ok: true, updated: true }
 })

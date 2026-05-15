@@ -7,6 +7,7 @@ interface DesiredIndex extends IndexDescription {
   key: IndexKeySpec
   name: string
   unique?: boolean
+  expireAfterSeconds?: number
 }
 
 // Compare an existing Mongo index keyspec (e.g. { user_id: 1, created_at: -1 })
@@ -91,5 +92,14 @@ export default defineNitroPlugin(async () => {
     },
     { key: { user_id: 1, created_at: -1 }, name: 'user_recent' },
     { key: { user_id: 1, unread: 1 }, name: 'user_unread' }
+  ])
+
+  // `sessions` is the Mongo-backed session store that replaces the
+  // previous cookie-encrypted state. The TTL index lets Mongo reap
+  // expired rows on its own (≤ 60 s sweep), so a forgotten browser
+  // doesn't keep a credential alive past `expires_at`.
+  await ensureIndexes(db.collection(COLLECTIONS.sessions), [
+    { key: { user_id: 1 }, name: 'user_id' },
+    { key: { expires_at: 1 }, name: 'expires_at_ttl', expireAfterSeconds: 0 }
   ])
 })

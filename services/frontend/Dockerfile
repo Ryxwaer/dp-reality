@@ -1,13 +1,15 @@
-FROM node:22-alpine AS builder
+# Two-stage build: bun does the install + Nuxt build (a lot faster than
+# npm/pnpm on multi-arch CI), node runs the resulting Nitro output. The
+# runtime layer stays node:22-alpine to keep the surface area identical
+# to the rest of the cluster's Node images and to keep the production
+# image small — bun's runtime is not needed once .output is built.
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
-
 COPY services/frontend/ ./
-RUN pnpm install --frozen-lockfile
-RUN pnpm build
+RUN bun install --frozen-lockfile
+RUN bun run build
 
 FROM node:22-alpine
 

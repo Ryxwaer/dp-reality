@@ -11,6 +11,7 @@ const tabItems = [
 ]
 const selectedTab = ref<'all' | 'unread'>('all')
 const toast = useToast()
+const { headers: csrfHeaders } = useCsrf()
 
 const { data: notifications, refresh } = await useFetch<NotificationDoc[]>(
   '/api/notifications',
@@ -75,7 +76,10 @@ async function onSelect(notification: NotificationDoc) {
   if (!notification.unread) return
 
   try {
-    await $fetch(`/api/notifications/${notification.id}/read`, { method: 'PATCH' })
+    await $fetch(`/api/notifications/${notification.id}/read`, {
+      method: 'PATCH',
+      headers: csrfHeaders()
+    })
     const target = notifications.value.find(n => n.id === notification.id)
     if (target) target.unread = false
     notification.unread = false
@@ -86,7 +90,10 @@ async function onSelect(notification: NotificationDoc) {
 
 async function onMarkAllRead() {
   try {
-    await $fetch('/api/notifications/read-all', { method: 'POST' })
+    await $fetch('/api/notifications/read-all', {
+      method: 'POST',
+      headers: csrfHeaders()
+    })
     await refresh()
     toast.add({ title: 'All caught up', color: 'success' })
   } catch {

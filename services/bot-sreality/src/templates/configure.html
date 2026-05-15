@@ -298,6 +298,25 @@
 
     let isEditMode = false;
 
+    // Same-origin double-submit CSRF: the BFF set a `csrf-token` cookie
+    // (non-HttpOnly) on the user's session; for every state-changing
+    // call through the /modules/* reverse proxy we echo it back as a
+    // header so the BFF middleware can compare against the server-side
+    // value. Standalone mode hits the bot directly on its own port,
+    // skipping the BFF — the cookie is absent there and the header is
+    // simply omitted.
+    function csrfHeaders() {
+      var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
+      return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
+    }
+    function mergeHeaders(base) {
+      var extra = csrfHeaders();
+      var out = {};
+      for (var k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+      for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) out[k2] = extra[k2];
+      return out;
+    }
+
     const els = {
       importUrl: document.getElementById('import-url'),
       importBtn: document.getElementById('import-btn'),
@@ -423,7 +442,7 @@
         const endpoint = isEmbedded ? '/modules/bot-sreality/parse-url' : '/parse-url';
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: mergeHeaders({ 'Content-Type': 'application/json' }),
           credentials: 'same-origin',
           body: JSON.stringify({ url })
         });
@@ -485,7 +504,7 @@
         try {
           const saveRes = await fetch('/modules/bot-sreality/configs/' + configId, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: mergeHeaders({ 'Content-Type': 'application/json' }),
             credentials: 'same-origin',
             body: JSON.stringify({ config: config })
           });

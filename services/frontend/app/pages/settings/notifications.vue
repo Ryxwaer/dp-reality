@@ -6,6 +6,7 @@ interface Preferences {
 }
 
 const toast = useToast()
+const { headers: csrfHeaders } = useCsrf()
 
 const { data: profile } = await useFetch('/api/user', {
   default: () => ({
@@ -57,7 +58,11 @@ const sections = [{
 
 async function onChange() {
   try {
-    await $fetch('/api/user/preferences', { method: 'PATCH', body: state })
+    await $fetch('/api/user/preferences', {
+      method: 'PATCH',
+      headers: csrfHeaders(),
+      body: state
+    })
     toast.add({ title: 'Preferences saved', color: 'success' })
   } catch {
     toast.add({ title: 'Could not save preferences', color: 'error' })

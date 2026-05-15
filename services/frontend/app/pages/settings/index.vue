@@ -11,6 +11,7 @@ type ProfileSchema = z.output<typeof profileSchema>
 
 const toast = useToast()
 const { fetch: refreshSession } = useUserSession()
+const { headers: csrfHeaders } = useCsrf()
 
 const { data: profile, refresh } = await useFetch('/api/user', {
   default: () => ({ id: '', email: '', name: '', created_at: '', preferences: {
@@ -35,7 +36,11 @@ const saving = ref(false)
 async function onSubmit(event: FormSubmitEvent<ProfileSchema>) {
   saving.value = true
   try {
-    await $fetch('/api/user', { method: 'PATCH', body: event.data })
+    await $fetch('/api/user', {
+      method: 'PATCH',
+      headers: csrfHeaders(),
+      body: event.data
+    })
     await Promise.all([refresh(), refreshSession()])
     toast.add({
       title: 'Profile updated',

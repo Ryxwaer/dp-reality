@@ -9,37 +9,59 @@ those decisions baked in.
 
 ## Subfolders
 
-- `platform/` — small, foundational platform fixes that the rest of
-  the tree builds on (orphan sweep, real HTML sanitiser, distinct
-  MongoDB credentials per service).
-- `security/` — auth / session / CSRF gaps called out by thesis §3.7.3
-  but missing in code.
+- `platform/` — small, foundational platform fixes (orphan sweep,
+  distinct MongoDB credentials per service, iframe URL hardening).
 - `bots/` — net-new bot service implementations.
 - `analytics/` — FR-04-B global market metrics dashboard.
-- `deployment/` — full K3s + Flux CD + NetworkPolicies + HPA + MongoDB
-  replica set + multi-arch CI migration (thesis §3.4–3.5). This is the
-  largest unit of work and is intentionally last so that the smaller
-  in-app changes (sessions in Mongo, distinct Mongo creds, etc.) are
-  in place before the cluster manifests have to encode them as
-  Secrets / ServiceAccounts.
-- `thesis-edits/` — places where the thesis needs to be amended rather
-  than the code (no `dp-reality` changes; included so the agent does
-  NOT silently change code to match these).
-- `pending-user-review/` — Group B "extras in code, not in thesis"
-  items the user wants to triage manually. The agent must not act on
-  these without further instruction.
+- `deployment/` — remaining K3s + Flux work (node placement +
+  resources, Mongo replica set, multi-arch CI, HPA, CronJobs). The
+  foundational deployment items — base manifests, NetworkPolicies,
+  Flux CD + image automation, SOPS — are already implemented and
+  their dedicated TODO files have been retired. Operational details
+  live in `k3s/runbook.md`.
 
-## Recommended dispatch order
+## Priority for thesis defence
 
-1. `platform/` (small, isolated changes; baseline for everything else)
-2. `security/` (depends on the new Mongo credentials from `platform/`)
-3. `bots/01-bot-bezrealitky.md` (parallelisable with `analytics/`)
-4. `analytics/01-price-evolution-dashboard.md`
-5. `deployment/` in numeric order (01 → 09; the K3s manifests are
-   the first prerequisite, the rest layer on top)
+Ordered by how visible the gap is to a defence panel. The first
+group are explicit thesis claims that the deployed system currently
+contradicts; they must close before defence or the thesis text must
+be softened. The second group are functional requirements that the
+thesis lists. The third group is defensibly deferrable.
 
-Group `pending-user-review/` is informational only — do not touch
-those files until the user has decided per-item.
+### P0 — Explicit thesis claims that currently contradict the code
+
+1. `platform/02-mongo-credential-separation.md` — §3.7.1 promises
+   distinct Mongo credentials per service; today every service shares
+   the root URI. This is the highest-stakes remaining gap because
+   the trust-boundary argument in §3.7.1 hinges on it.
+
+### P1 — Functional Requirements that don't currently work
+
+2. `platform/01-expires-at-daily-sweep.md` — FR-02-B (bots expire
+   after a TTL). The `expires_at` field is set and bumped on login,
+   but no sweep flips status to `stopped`. Pairs with…
+3. `deployment/09-cronjobs.md` — the K8s CronJob shell that calls
+   the sweep entrypoint produced by `platform/01`.
+4. `analytics/01-fr04b-price-evolution-dashboard.md` — FR-04-B.
+   Substantial; can be defended as "designed but out of scope" but
+   then the thesis must say so.
+
+### P2 — Defensible deferrals (defence prep needed)
+
+5. `bots/01-bot-bezrealitky.md` — third bot proves platform
+   extensibility but two bots already demonstrate the contract.
+6. `deployment/03-mongodb-replica-set.md` and
+   `deployment/02-node-placement-and-resources.md` — both depend on
+   the RPi5 joining the cluster. Can defend "phase-2 once the
+   second node arrives", but then the thesis topology paragraph
+   needs the same caveat.
+7. `deployment/05-multi-arch-ci-pipeline.md` — frontend is `amd64`-
+   only today (build time). Only matters once the RPi5 is in.
+8. `deployment/06-hpa-bff.md` — Mongo-backed sessions are in place
+   (see "Already shipped" below); this is now a small isolated
+   change.
+9. `platform/04-iframe-url-include-user-id.md` — security defence
+   in depth; the iframe contract works without it.
 
 ## Conventions every task assumes
 
@@ -55,3 +77,36 @@ those files until the user has decided per-item.
 - The thesis path is `/home/ryxwaer/Documents/projects/dp-doc/`. Task
   files cite it by section number; reading the corresponding `.tex`
   before each task is mandatory.
+
+## Already shipped (deleted from this tree)
+
+The following work is in production and no longer carries a TODO file:
+
+- K3s base manifests (`k3s/base/**`) — every long-running workload
+  has a Deployment / StatefulSet, ConfigMap, Service / NetworkPolicy.
+- NetworkPolicies + kube-router enforcement (`k3s/base/network
+  policies/**`, runbook §2b).
+- Flux CD + image automation (`flux/clusters/prod/**`,
+  `flux/infra/prod/**`, CI `main-<sha8>-<epoch>` tagging).
+- SOPS + age encrypted secrets in Git (`k3s/base/secrets/**`,
+  `.sops.yaml`, `.github/workflows/secrets-lint.yml`).
+- Path B: ingress-nginx + kube-prometheus-stack + Flagger Canary on
+  the frontend (`flux/infra/prod/**`, `k3s/base/frontend/canary.yaml`).
+- The two-hop external routing topology (NPM TLS → ingress-nginx),
+  documented in `k3s/runbook.md` Phase B.
+- **Mongo-backed sessions** (was `security/01`) — `nuxt-auth-utils`
+  dropped; `server/utils/session.ts` writes the session payload to
+  the new `sessions` collection (TTL index reaps expired rows) and
+  the cookie carries only an opaque session id. The §3.7.3
+  "horizontal BFF replication" claim is now true.
+- **CSRF tokens on state-changing routes** (was `security/02`) —
+  `server/middleware/csrf.ts` enforces a double-submit token on
+  every non-safe method and on every iframe-proxied write. The
+  bot iframes (`bot-bazos`, `bot-sreality`) read the `csrf-token`
+  cookie and echo it in the `X-CSRF-Token` header, which is exactly
+  the §3.7.3 "transparent forwarding" contract.
+- **DOMPurify-equivalent sanitiser** (was `platform/03`) —
+  `server/utils/sanitize-html.ts` now wraps `isomorphic-dompurify`
+  with the documented whitelist; Vitest suite under
+  `services/frontend/test/sanitize-html.test.ts` covers the
+  regression cases the regex parser would have failed.
