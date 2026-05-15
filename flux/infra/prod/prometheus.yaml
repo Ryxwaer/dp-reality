@@ -77,15 +77,24 @@ spec:
       # anything.
       initChownData:
         enabled: false
-      # The chart auto-generates a random admin password on first
-      # install and stores it under
-      # `monitoring/kube-prometheus-stack-grafana` as
-      # `admin-user` / `admin-password`. Retrieve with:
-      #   kubectl -n monitoring get secret kube-prometheus-stack-grafana \
-      #     -o jsonpath='{.data.admin-password}' | base64 -d
       # The service is exposed on the tailnet via the Tailscale operator
       # (see flux/infra/prod/tailscale-operator.yaml). From any tailnet
-      # member: http://grafana — public web never sees it.
+      # member: http://grafana — public web never sees it. The tailnet
+      # membership is our auth boundary, so we drop Grafana's own login
+      # form and grant anonymous Admin to anyone who can reach the URL.
+      # Rationale: Prometheus and Loki are already anonymous (Prometheus
+      # has no built-in auth, Loki has `auth_enabled: false`), and the
+      # admin password sat in a Kubernetes Secret that any kubectl-armed
+      # user already could read. Tailscale device auth is the stronger
+      # primitive — per-machine, revocable from the admin console, no
+      # shared secret to leak.
+      grafana.ini:
+        auth.anonymous:
+          enabled: true
+          org_role: Admin
+        auth:
+          disable_login_form: true
+          disable_signout_menu: true
       persistence:
         enabled: true
         storageClassName: local-path
