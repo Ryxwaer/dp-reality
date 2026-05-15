@@ -30,12 +30,12 @@ spec:
       ports:
         - { protocol: TCP, port: 3000 }
   egress:
+    # Match the shared `component: bot` label rather than enumerating
+    # bot service names: adding a new bot service is then a single
+    # label on the Deployment with zero NetworkPolicy churn (the
+    # inbound rule on `bots.yaml` already uses this pattern).
     - to:
-        - podSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/name
-                operator: In
-                values: [bot-bazos, bot-sreality]
+        - podSelector: { matchLabels: { app.kubernetes.io/component: bot } }
       ports:
         - { protocol: TCP, port: 8000 }
     - to:
