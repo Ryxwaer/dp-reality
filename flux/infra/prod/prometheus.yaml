@@ -90,8 +90,13 @@ spec:
         dashboards:
           enabled: true
           searchNamespace: ALL
+        # Watch every namespace for datasource ConfigMaps so Loki
+        # (in `logging/`) and any future external metrics source can
+        # plug in without modifying this HelmRelease. The matching
+        # label is `grafana_datasource: "1"`.
         datasources:
           enabled: true
+          searchNamespace: ALL
       resources:
         requests:
           cpu: 50m

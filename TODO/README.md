@@ -118,3 +118,11 @@ The following work is in production and no longer carries a TODO file:
   invisible to the public web. Realises the §3.7.3 "only the frontend
   is exposed externally" claim for the observability plane. Procedure
   to expose anything else: cf. `k3s/runbook.md` Phase C.
+- **Centralised logs (Loki + Promtail)** — single-binary Loki with
+  Promtail DaemonSet (`flux/infra/prod/loki.yaml`); Grafana's
+  datasource sidecar picks up the Loki datasource ConfigMap
+  automatically. From Grafana → Explore → Loki, the equivalent of
+  `kubectl logs -f` across every pod is two clicks away. 7-day
+  retention matches Prometheus' window so metric anomalies and log
+  lines line up on the same timeline. Procedure + LogQL crib sheet:
+  cf. `k3s/runbook.md` Phase D.

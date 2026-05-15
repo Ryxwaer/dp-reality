@@ -35,3 +35,14 @@ metadata:
 spec:
   interval: 30m
   url: https://pkgs.tailscale.com/helmcharts
+---
+# Grafana Labs' charts house Loki (logs) and Promtail (log shipper).
+# Same repo also publishes Tempo / Mimir / Alloy if we ever need them.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  interval: 30m
+  url: https://grafana.github.io/helm-charts

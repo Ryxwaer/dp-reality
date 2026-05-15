@@ -33,3 +33,12 @@ metadata:
   name: tailscale
   labels:
     app.kubernetes.io/part-of: dp-reality
+---
+# Loki + Promtail (centralised logs for the cluster). Co-located in
+# its own namespace so the DaemonSet pod-scrape RBAC stays narrow.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    app.kubernetes.io/part-of: dp-reality

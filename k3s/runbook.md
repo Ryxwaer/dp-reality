@@ -906,6 +906,63 @@ Drop the annotations and Flux reconciles the chart values — the proxy
 Pod is deleted and the Tailscale device disappears from the admin
 console within a minute.
 
+## Phase D — Centralised logs (Loki + Promtail)
+
+Loki sits next to Prometheus in the observability story: Prometheus
+answers "what was happening" (metrics, rates, success ratios), Loki
+answers "what did it say" (the actual log line). The two queries are
+linked in Grafana via shared labels (`namespace`, `pod`, `container`),
+so you can pivot from a Prometheus alert to the offending pod's
+log lines in one click.
+
+### D.1 What gets installed
+
+`flux/infra/prod/loki.yaml` deploys three things:
+
+- `loki` (HelmRelease) — single-binary Loki + 10 GiB filesystem PVC,
+  7-day retention to match Prometheus.
+- `promtail` (HelmRelease) — DaemonSet that tails every container's
+  stdout/stderr and ships to Loki with Kubernetes labels attached.
+- `loki-datasource` (ConfigMap, labelled `grafana_datasource: "1"`) —
+  Grafana's sidecar auto-discovers it across all namespaces (cf.
+  `prometheus.yaml`'s `sidecar.datasources.searchNamespace=ALL`) and
+  reloads without restarting Grafana.
+
+### D.2 Querying logs
+
+In Grafana → **Explore** → switch the datasource dropdown to **Loki**.
+Useful starting queries (LogQL):
+
+```logql
+{namespace="dp-reality"}
+{namespace="dp-reality", container="frontend"} |= "error"
+{namespace="dp-reality"} | json | request_id="abc-123"
+sum by (container) (rate({namespace="dp-reality"} |~ "(?i)error" [1m]))
+```
+
+Grafana's *Split view* button lets you put a Prometheus chart and a
+Loki query side-by-side — the timestamp scroll is synchronised, so
+you can click a request-rate spike on the metrics side and jump to
+the matching log window on the right.
+
+### D.3 Capacity & retention
+
+- 10 GiB PVC, 7-day retention, no replication (single-binary).
+- Current cluster log volume ≈ a few MB/day — months of headroom.
+- When the RPi5 joins, Promtail's DaemonSet will pick up automatically
+  (no config change). Loki itself stays single-replica on the
+  Minisforum's storage.
+
+### D.4 Failure modes
+
+- **Loki down**: Promtail buffers in memory + on local disk per node
+  for a few minutes. Beyond that, log lines are dropped — Promtail
+  prefers losing logs over crashing the node.
+- **PVC fills up**: Loki's compactor enforces 7d retention, but if
+  log volume spikes the PVC can fill before compaction runs. Watch
+  `loki_ingester_disk_usage` in Prometheus, bump `singleBinary.
+  persistence.size` in the HelmRelease when needed.
+
 ## Phase 3 (deferred) — CronJobs
 
 - Daily `sweep-expired-bots` CronJob (FR-02-B).

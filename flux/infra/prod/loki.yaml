@@ -1,0 +1,189 @@
+# Loki — single-binary log aggregator. "Communication observability"
+# the cheap way: Promtail tails every pod's stdout/stderr, ships to
+# Loki, and Grafana's `Explore` view turns it into the equivalent of
+# `kubectl logs -f` across the whole cluster (with regex, time-range,
+# and label filters). The auto-discovered datasource ConfigMap below
+# makes the data source appear in the existing Grafana automatically.
+#
+# Sizing:
+#   - SingleBinary mode (no separate read/write/backend split):
+#     fine up to a few GB of logs/day on a single node.
+#   - Filesystem storage on a local-path PVC: lost if the node dies,
+#     but cheap and replayable from pod logs if needed. 10 GiB is
+#     ~30 days of our current log volume.
+#   - Promtail as a DaemonSet: one pod per node, follows
+#     `/var/log/pods/**/*.log`.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: logging
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: loki
+      version: 6.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    deploymentMode: SingleBinary
+    # The chart unfortunately still scaffolds 0-replica stubs for the
+    # microservices-mode components unless we explicitly zero them out.
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+    ingester:
+      replicas: 0
+    querier:
+      replicas: 0
+    queryFrontend:
+      replicas: 0
+    queryScheduler:
+      replicas: 0
+    distributor:
+      replicas: 0
+    compactor:
+      replicas: 0
+    indexGateway:
+      replicas: 0
+    bloomCompactor:
+      replicas: 0
+    bloomGateway:
+      replicas: 0
+    # MinIO is the chart's default storage backend; we use local-path
+    # PVC instead to avoid an extra StatefulSet.
+    minio:
+      enabled: false
+    # Single-tenant, no auth — every Promtail in the cluster pushes
+    # to the same tenant, every Grafana query reads from the same
+    # tenant. The tailnet boundary is our auth boundary.
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      storage:
+        type: filesystem
+      schemaConfig:
+        configs:
+          - from: "2024-04-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+      # 7-day retention matches Prometheus' window so the two views
+      # stay in sync when troubleshooting.
+      limits_config:
+        retention_period: 168h
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+      compactor:
+        retention_enabled: true
+        delete_request_store: filesystem
+    singleBinary:
+      replicas: 1
+      persistence:
+        enabled: true
+        storageClass: local-path
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+    # Gateway is the nginx in front of Loki — useful in microservices
+    # mode, redundant in SingleBinary. Skip it to save the pod.
+    gateway:
+      enabled: false
+    # Chunk cache (memcached) — only needed at high query volume.
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+    # Tests are interactive; not for prod.
+    test:
+      enabled: false
+    lokiCanary:
+      enabled: false
+---
+# Promtail — DaemonSet that tails container logs on every node and
+# pushes them to Loki. The default chart values already pick up
+# `/var/log/pods/**/*.log` with Kubernetes labels attached, so the
+# only thing we have to override is the push target.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: promtail
+  namespace: logging
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: promtail
+      version: 6.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 1h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  dependsOn:
+    - name: loki
+      namespace: logging
+  values:
+    config:
+      clients:
+        - url: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+---
+# Auto-discovered Grafana datasource. The kube-prometheus-stack
+# Grafana sidecar watches ConfigMaps with this label across all
+# namespaces and reloads the datasources without restarting Grafana.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-datasource
+  namespace: logging
+  labels:
+    # Picked up by the kube-prometheus-stack Grafana sidecar
+    # (sidecar.datasources.searchNamespace=ALL is set in
+    # `prometheus.yaml`).
+    grafana_datasource: "1"
+data:
+  loki.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.logging.svc.cluster.local:3100
+        isDefault: false
+        jsonData:
+          maxLines: 1000
