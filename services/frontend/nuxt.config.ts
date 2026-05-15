@@ -40,6 +40,24 @@ export default defineNuxtConfig({
     },
     scheduledTasks: {
       '*/5 * * * *': ['janitor:provisional-bots']
+    },
+    // `isomorphic-dompurify` (our DOMPurify wrapper, per thesis §3.7.5)
+    // pulls jsdom → undici via a CJS `require('undici')`. When the build
+    // runs inside `oven/bun:1-alpine`, Nitro's @vercel/nft tracer drops
+    // undici's `main` entry from `.output/server/node_modules/undici/`,
+    // which crashes the runtime with "Cannot find module 'undici/index.js'".
+    // Listing the packages in `traceInclude` forces NFT to use them as
+    // additional trace entry points, which guarantees the main entry +
+    // every transitive file is copied to the output. See
+    // https://github.com/nuxt/nuxt/issues/22325 for the underlying NFT
+    // limitation. DOMPurify's maintainers explicitly disrecommend
+    // happy-dom (XSS risk), so swapping the DOM layer is not an option.
+    externals: {
+      traceInclude: [
+        './node_modules/undici/index.js',
+        './node_modules/jsdom/lib/api.js',
+        './node_modules/isomorphic-dompurify/dist/index.js'
+      ]
     }
   },
 
