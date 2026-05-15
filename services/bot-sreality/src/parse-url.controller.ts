@@ -1,7 +1,14 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Logger, Post } from '@nestjs/common';
+import { SrealityLocationService } from './sreality-location.service.js';
 
 interface ParseBody {
   url?: string;
+}
+
+interface ParsedGeo {
+  center: { type: 'Point'; coordinates: [number, number] };
+  radius_km: number;
+  region_label: string;
 }
 
 interface Parsed {
@@ -10,7 +17,13 @@ interface Parsed {
   category_sub_cb?: number[];
   price_min?: number;
   price_max?: number;
+  // Set only when the URL had `region` but lacked a usable radius
+  // (`vzdalenost` missing or 0). With a radius the geo fields below
+  // take over and city_contains stays unset.
   city_contains?: string;
+  center?: ParsedGeo['center'];
+  radius_km?: number;
+  region_label?: string;
 }
 
 type ParseResult =
@@ -36,7 +49,13 @@ const HOUSE_TYP_TO_CB: Record<string, number> = {
   vicegeneracni: 54,
 };
 
-function parseSrealityUrl(input: string | undefined): ParseResult {
+interface SyntacticParse {
+  out: Parsed;
+  region?: { name: string; id: number; typ: string };
+  radiusKm?: number;
+}
+
+function parseSyntactic(input: string | undefined): { ok: false; reason: string } | { ok: true; data: SyntacticParse } {
   const trimmed = String(input ?? '').trim();
   if (!trimmed) return { ok: false, reason: 'Paste a sreality.cz search URL.' };
   let url: URL;
@@ -95,24 +114,64 @@ function parseSrealityUrl(input: string | undefined): ParseResult {
     if (Number.isFinite(n)) out.price_max = n;
   }
 
-  const region = url.searchParams.get('region');
-  if (region) out.city_contains = region;
+  const regionName = url.searchParams.get('region')?.trim();
+  const regionIdStr = url.searchParams.get('region-id');
+  const regionTyp = url.searchParams.get('region-typ')?.trim();
+  const vzdalenostStr = url.searchParams.get('vzdalenost');
 
-  if (!Object.keys(out).length) {
-    return { ok: false, reason: 'Could not extract any filters from this URL.' };
+  const regionId = regionIdStr ? Number.parseInt(regionIdStr, 10) : NaN;
+  const radiusKm = vzdalenostStr ? Number.parseInt(vzdalenostStr, 10) : NaN;
+
+  const data: SyntacticParse = { out };
+  if (regionName && Number.isFinite(regionId) && regionTyp) {
+    data.region = { name: regionName, id: regionId, typ: regionTyp };
   }
-  return { ok: true, parsed: out };
+  if (Number.isFinite(radiusKm) && radiusKm > 0) {
+    data.radiusKm = radiusKm;
+  }
+  return { ok: true, data };
 }
 
 @Controller('parse-url')
 export class ParseUrlController {
+  private readonly logger = new Logger(ParseUrlController.name);
+
+  constructor(private readonly location: SrealityLocationService) {}
+
   // Internal helper, intentionally NOT part of the public bot-service
   // contract — the configure.html template calls this from the same
   // origin as the page it serves so the URL grammar of sreality.cz
   // never has to leak into the BFF or the platform-wide shape.
   @Post()
   @HttpCode(HttpStatus.OK)
-  parse(@Body() body: ParseBody): ParseResult {
-    return parseSrealityUrl(body?.url);
+  async parse(@Body() body: ParseBody): Promise<ParseResult> {
+    const syn = parseSyntactic(body?.url);
+    if (!syn.ok) return syn;
+    const { out, region, radiusKm } = syn.data;
+
+    // Geo resolution: only if the URL carries BOTH a region triple AND
+    // a positive vzdalenost. Without a radius we have no way to do a
+    // meaningful $geoWithin so we fall back to a string filter.
+    if (region && radiusKm) {
+      const hit = await this.location.resolveRegion(region.name, region.id, region.typ);
+      if (!hit) {
+        return {
+          ok: false,
+          reason: `Could not resolve "${region.name}" (id ${region.id}, ${region.typ}) on Sreality.`,
+        };
+      }
+      out.center = { type: 'Point', coordinates: [hit.lon, hit.lat] };
+      out.radius_km = radiusKm;
+      out.region_label = `${hit.label} \u00b7 within ${radiusKm} km`;
+    } else if (region) {
+      // No radius — best we can do is a name-based filter so the import
+      // stays useful (this is the legacy behaviour).
+      out.city_contains = region.name;
+    }
+
+    if (!Object.keys(out).length) {
+      return { ok: false, reason: 'Could not extract any filters from this URL.' };
+    }
+    return { ok: true, parsed: out };
   }
 }

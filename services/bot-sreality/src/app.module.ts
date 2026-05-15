@@ -16,7 +16,9 @@ import { WelcomeService } from './welcome.service.js';
 import { BotsController } from './bots.controller.js';
 import { ConfigureController } from './configure.controller.js';
 import { ParseUrlController } from './parse-url.controller.js';
+import { SuggestController } from './suggest.controller.js';
 import { HealthController } from './health.controller.js';
+import { SrealityLocationService } from './sreality-location.service.js';
 
 @Module({
   imports: [
@@ -37,11 +39,13 @@ import { HealthController } from './health.controller.js';
     ScraperService,
     RegistryService,
     WelcomeService,
+    SrealityLocationService,
   ],
   controllers: [
     BotsController,
     ConfigureController,
     ParseUrlController,
+    SuggestController,
     HealthController,
   ],
 })

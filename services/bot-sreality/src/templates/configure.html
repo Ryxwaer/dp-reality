@@ -160,6 +160,43 @@
 
     .field-row { display: flex; gap: 8px; align-items: stretch; }
     .field-row .input { flex: 1; }
+
+    .combo { position: relative; }
+    .combo-list {
+      position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      max-height: 240px; overflow-y: auto;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .combo-list .opt {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .combo-list .opt:last-child { border-bottom: none; }
+    .combo-list .opt:hover, .combo-list .opt[aria-selected="true"] { background: var(--surface-2); }
+    .combo-list .opt .typ { color: var(--text-muted); font-size: 11px; margin-left: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .combo-list .empty { padding: 8px 12px; font-size: 12px; color: var(--text-muted); }
+    .combo-chip {
+      margin-top: 6px;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      font-size: 13px;
+      max-width: 100%;
+    }
+    .combo-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .combo-chip-clear {
+      border: none; background: transparent; color: inherit;
+      cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
+    }
+    .combo-chip-clear:hover { color: var(--error); }
   </style>
 </head>
 <body>
@@ -236,8 +273,26 @@
         </div>
       </div>
       <div>
+        <label for="center-search">Centre region</label>
+        <div class="combo" id="center-combo">
+          <input id="center-search" class="input" type="text" placeholder="Type to search (e.g. Brno, Praha 5, Kunratice)\u2026" autocomplete="off" aria-autocomplete="list" aria-controls="center-list" />
+          <div id="center-list" class="combo-list" role="listbox" hidden></div>
+          <div id="center-chip" class="combo-chip" hidden>
+            <span class="combo-chip-label" id="center-chip-label"></span>
+            <button type="button" class="combo-chip-clear" id="center-chip-clear" aria-label="Clear centre">&times;</button>
+          </div>
+        </div>
+        <span class="help-inline">Pick a municipality, district or ward. Only used when a radius is set.</span>
+      </div>
+      <div>
+        <label for="radius">Radius (km)</label>
+        <input id="radius" class="input" type="number" min="1" max="200" step="1" placeholder="\u2014" />
+        <span class="help-inline">Listings without coordinates are excluded when a radius is set.</span>
+      </div>
+      <div>
         <label for="city">City contains</label>
         <input id="city" class="input" placeholder="e.g. Brno" />
+        <span class="help-inline">Substring match on listing city. Ignore if you set a radius above.</span>
       </div>
       <div>
         <label for="kw">Title must contain</label>
@@ -327,6 +382,12 @@
       dispoPills: document.getElementById('dispo-pills'),
       pmin: document.getElementById('pmin'),
       pmax: document.getElementById('pmax'),
+      centerSearch: document.getElementById('center-search'),
+      centerList: document.getElementById('center-list'),
+      centerChip: document.getElementById('center-chip'),
+      centerChipLabel: document.getElementById('center-chip-label'),
+      centerChipClear: document.getElementById('center-chip-clear'),
+      radius: document.getElementById('radius'),
       city: document.getElementById('city'),
       kw: document.getElementById('kw'),
       labels: document.getElementById('labels'),
@@ -335,6 +396,97 @@
       formMsg: document.getElementById('form-msg'),
       submitBtn: document.getElementById('submit-btn')
     };
+
+    // Selected centre: persisted as {type:'Point', coordinates:[lon,lat]}
+    // plus a display label. Null when no centre is picked.
+    let centerSelected = null; // { lat, lon, label }
+
+    function showCenterChip() {
+      if (!centerSelected) {
+        els.centerChip.hidden = true;
+        els.centerSearch.style.display = '';
+        return;
+      }
+      els.centerChipLabel.textContent = centerSelected.label;
+      els.centerChip.hidden = false;
+      els.centerSearch.style.display = 'none';
+      hideCenterList();
+      notifyResize();
+    }
+    function clearCenter() {
+      centerSelected = null;
+      els.centerSearch.value = '';
+      showCenterChip();
+    }
+    els.centerChipClear.addEventListener('click', clearCenter);
+
+    function hideCenterList() {
+      els.centerList.hidden = true;
+      els.centerList.innerHTML = '';
+      notifyResize();
+    }
+    function renderCenterList(hits) {
+      els.centerList.innerHTML = '';
+      if (!hits || !hits.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No matches.';
+        els.centerList.appendChild(empty);
+      } else {
+        for (const h of hits) {
+          const opt = document.createElement('div');
+          opt.className = 'opt';
+          opt.setAttribute('role', 'option');
+          const labelSpan = document.createElement('span');
+          labelSpan.textContent = h.label;
+          const typSpan = document.createElement('span');
+          typSpan.className = 'typ';
+          typSpan.textContent = h.entityType;
+          opt.appendChild(labelSpan);
+          opt.appendChild(typSpan);
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            centerSelected = { lat: h.lat, lon: h.lon, label: h.label };
+            showCenterChip();
+          });
+          els.centerList.appendChild(opt);
+        }
+      }
+      els.centerList.hidden = false;
+      notifyResize();
+    }
+
+    let suggestTimer = null;
+    let suggestSeq = 0;
+    async function runSuggest(q) {
+      const seq = ++suggestSeq;
+      try {
+        const endpoint = isEmbedded ? '/modules/bot-sreality/suggest' : '/suggest';
+        const res = await fetch(endpoint + '?q=' + encodeURIComponent(q), {
+          credentials: 'same-origin',
+          headers: mergeHeaders({})
+        });
+        if (!res.ok) { hideCenterList(); return; }
+        const data = await res.json();
+        if (seq !== suggestSeq) return; // stale response
+        renderCenterList(data && data.hits ? data.hits : []);
+      } catch {
+        if (seq === suggestSeq) hideCenterList();
+      }
+    }
+    els.centerSearch.addEventListener('input', () => {
+      const q = els.centerSearch.value.trim();
+      if (suggestTimer) clearTimeout(suggestTimer);
+      if (q.length < 2) { hideCenterList(); return; }
+      suggestTimer = setTimeout(() => runSuggest(q), 180);
+    });
+    els.centerSearch.addEventListener('blur', () => {
+      setTimeout(hideCenterList, 120);
+    });
+    els.centerSearch.addEventListener('focus', () => {
+      const q = els.centerSearch.value.trim();
+      if (q.length >= 2) runSuggest(q);
+    });
 
     let dispoSelected = new Set();
 
@@ -385,7 +537,20 @@
       }
       if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
       if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
-      if (typeof p.city_contains === 'string') els.city.value = p.city_contains;
+      // Geo replaces city_contains when present (the parser guarantees
+      // mutual exclusion). Otherwise fall back to the text filter.
+      if (p.center && Array.isArray(p.center.coordinates) && typeof p.radius_km === 'number') {
+        centerSelected = {
+          lon: p.center.coordinates[0],
+          lat: p.center.coordinates[1],
+          label: (p.region_label || '').trim() || 'Selected region'
+        };
+        els.radius.value = String(p.radius_km);
+        els.city.value = '';
+        showCenterChip();
+      } else if (typeof p.city_contains === 'string') {
+        els.city.value = p.city_contains;
+      }
     }
 
     async function loadExisting() {
@@ -417,6 +582,15 @@
         if (c.price_min != null) els.pmin.value = String(c.price_min);
         if (c.price_max != null) els.pmax.value = String(c.price_max);
         if (c.city_contains) els.city.value = c.city_contains;
+        if (c.center && Array.isArray(c.center.coordinates) && c.radius_km != null) {
+          centerSelected = {
+            lon: c.center.coordinates[0],
+            lat: c.center.coordinates[1],
+            label: (c.region_label || '').trim() || 'Saved region'
+          };
+          els.radius.value = String(c.radius_km);
+          showCenterChip();
+        }
         if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
         if (Array.isArray(c.labels_any)) els.labels.value = c.labels_any.join(', ');
       } catch {}
@@ -465,6 +639,8 @@
     });
 
     function buildConfig() {
+      const radiusVal = intOrNull(els.radius.value);
+      const hasRadius = radiusVal !== null && radiusVal > 0 && !!centerSelected;
       return {
         category_main_cb: els.prop.value ? parseInt(els.prop.value, 10) : null,
         category_type_cb: els.trans.value ? parseInt(els.trans.value, 10) : null,
@@ -472,6 +648,11 @@
         price_min: intOrNull(els.pmin.value),
         price_max: intOrNull(els.pmax.value),
         city_contains: els.city.value.trim() || null,
+        center: hasRadius
+          ? { type: 'Point', coordinates: [centerSelected.lon, centerSelected.lat] }
+          : null,
+        radius_km: hasRadius ? radiusVal : null,
+        region_label: hasRadius ? (centerSelected.label || null) : null,
         title_keywords: csv(els.kw.value),
         labels_any: csv(els.labels.value)
       };

@@ -40,6 +40,27 @@ function normalizeConfig(input: Partial<SrealityBotConfig> | undefined): Srealit
   const city = c.city_contains?.trim();
   if (city) out.city_contains = city;
 
+  // Geo radius filter. We require all three of (center, radius_km > 0,
+  // coordinates well-formed) before persisting any of them — partial
+  // state in the DB would silently disable the filter at match time.
+  const radius =
+    typeof c.radius_km === 'number' && Number.isFinite(c.radius_km) && c.radius_km > 0
+      ? c.radius_km
+      : null;
+  const coords = c.center?.coordinates;
+  const hasGoodCenter =
+    !!coords &&
+    Array.isArray(coords) &&
+    coords.length === 2 &&
+    Number.isFinite(coords[0]) &&
+    Number.isFinite(coords[1]);
+  if (radius !== null && hasGoodCenter) {
+    out.center = { type: 'Point', coordinates: [coords![0], coords![1]] };
+    out.radius_km = radius;
+    const label = c.region_label?.trim();
+    if (label) out.region_label = label;
+  }
+
   return out;
 }
 

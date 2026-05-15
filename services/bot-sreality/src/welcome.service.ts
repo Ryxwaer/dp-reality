@@ -72,7 +72,12 @@ function summariseFilter(cfg: SrealityBotConfig): string {
     parts.push(`up to ${formatPriceCzk(cfg.price_max)}`);
   }
 
-  if (cfg.city_contains) parts.push(`in ${cfg.city_contains}`);
+  if (cfg.center && cfg.radius_km && cfg.radius_km > 0) {
+    const where = cfg.region_label?.trim() || 'selected area';
+    parts.push(`within ${cfg.radius_km} km (${where})`);
+  } else if (cfg.city_contains) {
+    parts.push(`in ${cfg.city_contains}`);
+  }
   if (cfg.title_keywords?.length) {
     parts.push('matching ' + cfg.title_keywords.map((k) => `"${k}"`).join(', '));
   }

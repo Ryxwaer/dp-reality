@@ -3,6 +3,15 @@ import type { HydratedDocument } from 'mongoose';
 
 export type BotConfigDocument = HydratedDocument<BotConfig>;
 
+// GeoJSON Point ([lon, lat]) used as the centre of the radius filter.
+// Kept identical in shape to `Listing.gps` so future Mongo $geoWithin
+// queries can compare the two directly.
+@Schema({ _id: false })
+class GeoPoint {
+  @Prop({ required: true, enum: ['Point'], default: 'Point' }) type!: 'Point';
+  @Prop({ type: [Number], required: true }) coordinates!: [number, number];
+}
+
 // Per-bot configuration shape. Stored shape is whatever the bot service
 // chose; nothing else in the platform interprets the inner `config`.
 @Schema({ _id: false })
@@ -12,7 +21,22 @@ export class SrealityBotConfig {
   @Prop({ type: [Number], default: [] }) category_sub_cb!: number[];
   @Prop() price_min?: number;
   @Prop() price_max?: number;
+  // Manual text filter; substring match against `listing.city`. Kept
+  // for users who want to filter by name even when no geo centre is
+  // set. URL import no longer writes this — it sets `center`/`radius_km`
+  // instead.
   @Prop() city_contains?: string;
+  // Geographic radius filter. When both fields are set the matcher
+  // requires `listing.gps` to be within `radius_km` of `center` (great
+  // circle / haversine). Listings without GPS are excluded — we'd
+  // rather miss a hit than notify a user about a listing we can't
+  // place on the map.
+  @Prop({ type: GeoPoint }) center?: GeoPoint;
+  @Prop() radius_km?: number;
+  // Human-readable label of the centre region (e.g. "Brno
+  // (municipality)"). Display-only — neither the matcher nor any
+  // downstream service interprets it.
+  @Prop() region_label?: string;
   @Prop({ type: [String], default: [] }) title_keywords!: string[];
   @Prop({ type: [String], default: [] }) labels_any!: string[];
 }
