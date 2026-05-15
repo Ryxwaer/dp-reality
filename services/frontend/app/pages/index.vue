@@ -31,6 +31,7 @@ const { isNotificationsSlideoverOpen } = useDashboard()
 
     <template #body>
       <HomeStats />
+      <HomeHeatmap />
     </template>
   </UDashboardPanel>
 </template>
