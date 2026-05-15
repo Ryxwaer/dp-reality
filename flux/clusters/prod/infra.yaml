@@ -18,3 +18,11 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  # The Tailscale operator's OAuth credentials live under
+  # `flux/infra/prod/secrets/` SOPS-encrypted; kustomize-controller
+  # decrypts them in memory at apply time using the same age key as the
+  # app stack (see `flux/clusters/prod/apps.yaml`).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

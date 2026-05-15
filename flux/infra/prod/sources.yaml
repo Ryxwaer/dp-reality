@@ -26,3 +26,12 @@ metadata:
 spec:
   interval: 30m
   url: https://flagger.app
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: tailscale
+  namespace: flux-system
+spec:
+  interval: 30m
+  url: https://pkgs.tailscale.com/helmcharts

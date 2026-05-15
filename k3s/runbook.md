@@ -776,16 +776,27 @@ crash-on-error semantics inside `services/email-notifier/main.go`.
 ### B.5 Grafana access
 
 `kube-prometheus-stack` ships Grafana as a ClusterIP service with
-auto-generated admin credentials. Retrieve and port-forward:
+auto-generated admin credentials. Retrieve the admin password with:
 
 ```bash
 kubectl -n monitoring get secret kube-prometheus-stack-grafana \
   -o jsonpath='{.data.admin-password}' | base64 -d
 # user: admin
-
-kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
-# http://127.0.0.1:3000
 ```
+
+Two ways to reach the UI:
+
+1. **Tailscale (durable, no port-forward — preferred)**. The Grafana
+   service carries `tailscale.com/expose: "true"` annotations
+   (cf. `flux/infra/prod/prometheus.yaml`). The Tailscale operator
+   (Phase C, below) joins it to the tailnet as `http://grafana`.
+   Prometheus is exposed the same way at `http://prometheus`. Both
+   are visible only to tailnet members.
+2. **Local port-forward (no Tailscale needed)**:
+   ```bash
+   kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3030:80
+   # http://127.0.0.1:3030 (3000 is left free for Nuxt dev)
+   ```
 
 The chart auto-loads useful dashboards (Kubernetes / Compute
 Resources, Node Exporter / Nodes, NGINX Ingress Controller). For
@@ -807,6 +818,93 @@ kubectl -n monitoring logs prometheus-kube-prometheus-stack-0 -c prometheus --ta
 # after an upstream chart bump. Bumping the HelmRelease tag and
 # letting Flux reconcile fixes most cases.
 ```
+
+## Phase C — Tailscale service exposure
+
+Per thesis §3.7, internal services should be reachable from the
+tailnet but never from the public web. We use the official Tailscale
+Kubernetes operator: annotate a Service with `tailscale.com/expose:
+"true"` and the operator spawns a small proxy Pod that joins the
+tailnet under its own MagicDNS hostname.
+
+### C.1 One-time admin-console steps
+
+You must do this once, in browser, before Flux can bring up the
+operator:
+
+1. Open <https://login.tailscale.com/admin/acls/file>. Make sure the
+   ACL policy contains:
+   ```jsonc
+   {
+     "tagOwners": {
+       "tag:k8s-operator": ["autogroup:admin"],
+       "tag:k8s":          ["tag:k8s-operator"]
+     },
+     // ...rest of your policy unchanged
+   }
+   ```
+   `tag:k8s-operator` lets the operator authenticate; `tag:k8s` is
+   what every per-Service proxy gets tagged with, owned by the
+   operator (this is what lets the operator rotate auth keys for
+   those proxies without your intervention).
+
+2. Open <https://login.tailscale.com/admin/settings/oauth>. Click
+   **Generate OAuth client**:
+   - Description: `dp-reality k8s operator`
+   - Scopes: `Devices: Core (Write)`, `Auth Keys (Write)`
+   - Tags: `tag:k8s-operator`
+
+   Copy the client ID and client secret it shows ONCE.
+
+### C.2 Encrypt the credentials into Git
+
+From the workspace root with the SOPS age key present:
+
+```bash
+# Decrypt the placeholder
+sops flux/infra/prod/secrets/tailscale-operator-oauth.yaml
+# Replace PLACEHOLDER_CLIENT_ID / PLACEHOLDER_CLIENT_SECRET with the
+# real values, save & exit. The file is re-encrypted on close.
+```
+
+Commit the encrypted file. Flux re-applies the Secret, and the
+operator pod restarts when it sees the new credentials.
+
+### C.3 Verify the operator is happy
+
+```bash
+kubectl -n tailscale get pods       # operator + per-service proxy pods
+sudo tailscale status               # `grafana`, `prometheus` appear as
+                                     # devices in your tailnet
+```
+
+From any tailnet device:
+
+```bash
+ping -c1 grafana
+curl -sI http://grafana             # 302 redirect to login is success
+curl -sI http://prometheus/-/ready  # 200 is success
+```
+
+### C.4 Exposing a new Service
+
+Two annotations on the Service do everything:
+
+```yaml
+metadata:
+  annotations:
+    tailscale.com/expose:   "true"
+    tailscale.com/hostname: "my-internal-thing"
+```
+
+No NodePort, no Ingress, no firewall change. The Service is
+unreachable from anywhere except the tailnet.
+
+### C.5 Removing an exposure
+
+Drop the annotations and Flux reconciles the chart values — the proxy
+Pod is deleted and the Tailscale device disappears from the admin
+console within a minute.
 
 ## Phase 3 (deferred) — CronJobs
 

@@ -110,3 +110,11 @@ The following work is in production and no longer carries a TODO file:
   with the documented whitelist; Vitest suite under
   `services/frontend/test/sanitize-html.test.ts` covers the
   regression cases the regex parser would have failed.
+- **Tailscale-only exposure of internal services** — Tailscale
+  Kubernetes operator deployed via Flux
+  (`flux/infra/prod/tailscale-operator.yaml`); Grafana and Prometheus
+  carry `tailscale.com/expose` annotations and are reachable at
+  `http://grafana` / `http://prometheus` from any tailnet member,
+  invisible to the public web. Realises the §3.7.3 "only the frontend
+  is exposed externally" claim for the observability plane. Procedure
+  to expose anything else: cf. `k3s/runbook.md` Phase C.

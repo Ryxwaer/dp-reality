@@ -14,3 +14,9 @@ creation_rules:
   - path_regex: k3s/base/secrets/.*\.yaml$
     encrypted_regex: '^(data|stringData)$'
     age: age1ngv4hv04nvrlec92f6dwjxz3hrg5ythxdvwwcdjujnwezlth6ycsnahv7e
+  # Infra-level Secrets (Tailscale OAuth, future Helm-chart credentials)
+  # use the same age key but live next to the corresponding HelmRelease
+  # under `flux/infra/prod/secrets/`.
+  - path_regex: flux/infra/prod/secrets/.*\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1ngv4hv04nvrlec92f6dwjxz3hrg5ythxdvwwcdjujnwezlth6ycsnahv7e

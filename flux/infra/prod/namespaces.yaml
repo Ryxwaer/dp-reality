@@ -22,3 +22,14 @@ metadata:
   name: flagger-system
   labels:
     app.kubernetes.io/part-of: dp-reality
+---
+# Hosts the Tailscale Kubernetes operator and the per-Service proxy
+# pods it spins up for each `tailscale.com/expose: "true"` annotation.
+# The operator joins our personal tailnet using the OAuth credentials
+# in `flux/infra/prod/secrets/tailscale-operator-oauth.yaml`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+  labels:
+    app.kubernetes.io/part-of: dp-reality

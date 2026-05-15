@@ -1,0 +1,65 @@
+# Tailscale Kubernetes operator. Watches the cluster for Services
+# annotated with `tailscale.com/expose: "true"` and, for each, spins
+# up a small proxy Pod that joins our tailnet under a MagicDNS name
+# (derived from `tailscale.com/hostname`) and forwards into the
+# in-cluster Service. The effect is: any tailnet device can reach the
+# Service at e.g. `http://grafana` while the public web sees nothing —
+# no NodePort, no Ingress, no firewall rules.
+#
+# This is the access plane for internal tools (Grafana, Prometheus,
+# Flagger, future admin panels). The frontend is the only Service that
+# stays publicly reachable, via NPM → ingress-nginx → frontend-primary.
+#
+# OAuth credentials live in `secrets/tailscale-operator-oauth.yaml` as
+# a SOPS-encrypted Secret named `operator-oauth` in this namespace; the
+# chart picks it up automatically when `oauth.clientId` /
+# `oauth.clientSecret` are left empty in values.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tailscale-operator
+  namespace: tailscale
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: tailscale-operator
+      version: 1.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: tailscale
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # Defer to the pre-created `operator-oauth` Secret. Leaving these
+    # empty makes the chart use the existing Secret rather than
+    # template a new one from values.
+    oauth:
+      clientId: ""
+      clientSecret: ""
+    operatorConfig:
+      hostname: "dp-reality-operator"
+      logging: "info"
+      defaultTags:
+        - "tag:k8s-operator"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+    # Each exposed Service spawns one proxy Pod tagged `tag:k8s`. The
+    # tag must be defined in the tailnet ACL (see runbook) with
+    # `tag:k8s-operator` as its owner so the operator can issue
+    # auth keys on its behalf.
+    proxyConfig:
+      defaultTags: "tag:k8s"
+      firewallMode: auto

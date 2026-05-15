@@ -6,3 +6,5 @@ resources:
   - ingress-nginx.yaml
   - prometheus.yaml
   - flagger.yaml
+  - tailscale-operator.yaml
+  - secrets/tailscale-operator-oauth.yaml
