@@ -68,6 +68,15 @@ spec:
     grafana:
       enabled: true
       defaultDashboardsTimezone: utc
+      # On Fedora CoreOS the default `init-chown-data` busybox sidecar
+      # can't `chown` Grafana's runtime-created PNG/CSV/PDF rendering
+      # subdirs across SELinux MCS labels, so a second roll of the
+      # Deployment ends in Init:Error. `fsGroup: 472` set by the chart
+      # already handles ownership on PVC mount, so the init container
+      # is redundant — disabling it cures the trap without sacrificing
+      # anything.
+      initChownData:
+        enabled: false
       # The chart auto-generates a random admin password on first
       # install and stores it under
       # `monitoring/kube-prometheus-stack-grafana` as
