@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bezrealitky bot configuration</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --surface: #fafafa;
+      --surface-2: #f4f4f5;
+      --border: #e4e4e7;
+      --border-strong: #d4d4d8;
+      --text: #18181b;
+      --text-muted: #71717a;
+      --primary: #00C16A;
+      --primary-hover: #00A155;
+      --primary-fg: #ffffff;
+      --primary-soft: rgba(0, 193, 106, 0.12);
+      --error: #dc2626;
+      --error-soft: rgba(220, 38, 38, 0.10);
+      --success: #16a34a;
+      --radius: 6px;
+      --radius-lg: 10px;
+    }
+    html.dark {
+      color-scheme: dark;
+      --bg: #18181b;
+      --surface: #27272a;
+      --surface-2: #3f3f46;
+      --border: #3f3f46;
+      --border-strong: #52525b;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --primary: #00DC82;
+      --primary-hover: #00C16A;
+      --primary-fg: #052E16;
+      --primary-soft: rgba(0, 220, 130, 0.18);
+      --error: #f87171;
+      --error-soft: rgba(248, 113, 113, 0.12);
+      --success: #4ade80;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      background: transparent;
+      color: var(--text);
+      font-family: 'Public Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    html.standalone, html.standalone body { background: var(--bg); }
+    body { padding: 0; }
+    html.standalone body { padding: 32px 24px; max-width: 760px; margin: 0 auto; }
+    *, *::before, *::after { box-sizing: border-box; }
+
+    .stack > * + * { margin-top: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+    }
+    .card h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+    .card .desc { margin: 0 0 14px; font-size: 13px; color: var(--text-muted); }
+
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    .help, .help-inline { display: block; font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    .input, .select {
+      width: 100%;
+      padding: 7px 11px;
+      font: inherit;
+      color: inherit;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      transition: border-color .12s, box-shadow .12s;
+    }
+    .input::placeholder { color: var(--text-muted); }
+    .input:hover, .select:hover { border-color: var(--text-muted); }
+    .input:focus, .select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-soft);
+    }
+    .input[type="number"] { font-variant-numeric: tabular-nums; }
+
+    .btn {
+      cursor: pointer;
+      padding: 7px 14px;
+      font: inherit;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      background: var(--bg);
+      color: inherit;
+      border-radius: var(--radius);
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .btn:hover { background: var(--surface-2); }
+    .btn-ghost { background: transparent; border-color: transparent; }
+    .btn-ghost:hover { background: var(--surface-2); }
+    .btn-primary {
+      background: var(--primary); color: var(--primary-fg); border-color: var(--primary);
+    }
+    .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--primary-soft); }
+
+    .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .slider { position: absolute; inset: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; transition: background .12s; }
+    .switch .slider::before { content: ""; position: absolute; left: 1px; top: 1px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: transform .12s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+    .switch input:checked + .slider { background: var(--primary); border-color: var(--primary); }
+    .switch input:checked + .slider::before { transform: translateX(16px); }
+
+    .row-flex { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .row-flex > div:first-child { flex: 1; }
+    .row-flex label { margin-bottom: 2px; }
+
+    .footer {
+      display: flex; gap: 8px; justify-content: flex-end;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+    }
+
+    .alert { padding: 10px 12px; border-radius: var(--radius); font-size: 13px; }
+    .alert-error { background: var(--error-soft); color: var(--error); }
+    .alert-success { background: var(--primary-soft); color: var(--success); }
+
+    .field-row { display: flex; gap: 8px; align-items: stretch; }
+    .field-row .input { flex: 1; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      cursor: pointer;
+      user-select: none;
+      padding: 5px 10px;
+      font-size: 12px;
+      line-height: 1.2;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      color: inherit;
+      background: var(--bg);
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .chip:hover { background: var(--surface-2); }
+    .chip[aria-pressed="true"] {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="stack" id="root">
+    <div class="card stack" id="general-card">
+      <div>
+        <h3>General</h3>
+        <p class="desc">How the bot is named in your dashboard and whether it sends digest emails.</p>
+      </div>
+      <div>
+        <label for="name">Name</label>
+        <input id="name" class="input" placeholder="e.g. Brno apartments under 5M" maxlength="100" />
+      </div>
+      <div class="row-flex">
+        <div>
+          <label>Email digest</label>
+          <span class="help-inline">Send a digest email when this bot finds new matches.</span>
+        </div>
+        <label class="switch">
+          <input id="email" type="checkbox" />
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <div>
+        <h3>Quick import</h3>
+        <p class="desc">Paste any bezrealitky.cz filter URL and we&rsquo;ll fill the form below.</p>
+      </div>
+      <div class="field-row">
+        <input id="import-url" class="input" type="url" placeholder="https://www.bezrealitky.cz/vypis/nabidka-prodej/byt?…" />
+        <button id="import-btn" type="button" class="btn">Import</button>
+      </div>
+      <div id="import-msg" class="help-inline" aria-live="polite"></div>
+    </div>
+
+    <div class="card stack">
+      <div>
+        <h3>Filters</h3>
+        <p class="desc">Empty fields = wildcard.</p>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label for="offer">Offer type</label>
+          <select id="offer" class="select">
+            <option value="">Any</option>
+            <option value="sale">Sale</option>
+            <option value="rent">Rent</option>
+          </select>
+        </div>
+        <div>
+          <label for="prop">Property type</label>
+          <select id="prop" class="select">
+            <option value="">Any</option>
+            <option value="apartment">Apartment</option>
+            <option value="house">House</option>
+            <option value="land">Land</option>
+            <option value="commercial">Commercial</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label>Disposition</label>
+        <div id="dispo-chips" class="chips" role="group" aria-label="Disposition filter">
+          <button type="button" class="chip" data-value="1+kk" aria-pressed="false">1+kk</button>
+          <button type="button" class="chip" data-value="1+1" aria-pressed="false">1+1</button>
+          <button type="button" class="chip" data-value="2+kk" aria-pressed="false">2+kk</button>
+          <button type="button" class="chip" data-value="2+1" aria-pressed="false">2+1</button>
+          <button type="button" class="chip" data-value="3+kk" aria-pressed="false">3+kk</button>
+          <button type="button" class="chip" data-value="3+1" aria-pressed="false">3+1</button>
+          <button type="button" class="chip" data-value="4+kk" aria-pressed="false">4+kk</button>
+          <button type="button" class="chip" data-value="4+1" aria-pressed="false">4+1</button>
+          <button type="button" class="chip" data-value="5+kk" aria-pressed="false">5+kk</button>
+          <button type="button" class="chip" data-value="5+1" aria-pressed="false">5+1</button>
+          <button type="button" class="chip" data-value="6+kk" aria-pressed="false">6+kk</button>
+          <button type="button" class="chip" data-value="garsoniera" aria-pressed="false">Garsoniéra</button>
+          <button type="button" class="chip" data-value="ostatní" aria-pressed="false">Other</button>
+        </div>
+        <span class="help-inline">Click to add or remove. Empty selection matches all.</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label for="pmin">Price min (CZK)</label>
+          <input id="pmin" class="input" type="number" min="0" step="1000" placeholder="—" />
+        </div>
+        <div>
+          <label for="pmax">Price max (CZK)</label>
+          <input id="pmax" class="input" type="number" min="0" step="1000" placeholder="—" />
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label for="smin">Surface min (m²)</label>
+          <input id="smin" class="input" type="number" min="0" step="1" placeholder="—" />
+        </div>
+        <div>
+          <label for="smax">Surface max (m²)</label>
+          <input id="smax" class="input" type="number" min="0" step="1" placeholder="—" />
+        </div>
+      </div>
+      <div>
+        <label for="city">City contains</label>
+        <input id="city" class="input" placeholder="e.g. Brno" />
+        <span class="help-inline">Case-insensitive substring of the city name.</span>
+      </div>
+      <div>
+        <label for="kw">Title must contain</label>
+        <input id="kw" class="input" placeholder="e.g. balkon, lodzie" />
+        <span class="help-inline">Comma-separated. All keywords must appear in the title (case-insensitive).</span>
+      </div>
+    </div>
+
+    <div id="form-msg"></div>
+
+    <div class="footer">
+      <button id="cancel-btn" type="button" class="btn btn-ghost">Cancel</button>
+      <button id="submit-btn" type="button" class="btn btn-primary">Save</button>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const params = new URLSearchParams(location.search);
+    const configId = params.get('config_id') || '';
+    const userId = params.get('user_id') || '';
+
+    const isEmbedded = window.parent && window.parent !== window;
+    const PARENT_ORIGIN = window.location.origin;
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.classList.add('dark');
+    }
+    if (!isEmbedded) {
+      document.documentElement.classList.add('standalone');
+    }
+    document.getElementById('general-card').hidden = true;
+
+    let isEditMode = false;
+
+    function csrfHeaders() {
+      var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
+      return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
+    }
+    function mergeHeaders(base) {
+      var extra = csrfHeaders();
+      var out = {};
+      for (var k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+      for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) out[k2] = extra[k2];
+      return out;
+    }
+
+    const els = {
+      importUrl: document.getElementById('import-url'),
+      importBtn: document.getElementById('import-btn'),
+      importMsg: document.getElementById('import-msg'),
+      offer: document.getElementById('offer'),
+      prop: document.getElementById('prop'),
+      dispoChips: document.getElementById('dispo-chips'),
+      pmin: document.getElementById('pmin'),
+      pmax: document.getElementById('pmax'),
+      smin: document.getElementById('smin'),
+      smax: document.getElementById('smax'),
+      city: document.getElementById('city'),
+      kw: document.getElementById('kw'),
+      submit: document.getElementById('submit-btn'),
+      cancel: document.getElementById('cancel-btn'),
+      formMsg: document.getElementById('form-msg')
+    };
+
+    function csv(s) {
+      return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    }
+    function intOrNull(v) {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    function getSelectedDispositions() {
+      return Array.from(
+        els.dispoChips.querySelectorAll('.chip[aria-pressed="true"]')
+      ).map((b) => b.dataset.value);
+    }
+    function setSelectedDispositions(values) {
+      const set = new Set((values || []).map(String));
+      els.dispoChips.querySelectorAll('.chip').forEach((chip) => {
+        chip.setAttribute(
+          'aria-pressed',
+          set.has(chip.dataset.value) ? 'true' : 'false',
+        );
+      });
+    }
+    els.dispoChips.addEventListener('click', (event) => {
+      const target = event.target.closest('.chip');
+      if (!target) return;
+      const pressed = target.getAttribute('aria-pressed') === 'true';
+      target.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+    });
+
+    function applyParsed(p) {
+      if (typeof p.offer_type === 'string') els.offer.value = p.offer_type;
+      if (typeof p.property_type === 'string') els.prop.value = p.property_type;
+      if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
+      if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
+      if (typeof p.surface_min === 'number') els.smin.value = String(p.surface_min);
+      if (typeof p.surface_max === 'number') els.smax.value = String(p.surface_max);
+      if (typeof p.city_contains === 'string') els.city.value = p.city_contains;
+      if (typeof p.title_keywords === 'string') els.kw.value = p.title_keywords;
+      if (Array.isArray(p.disposition_in)) setSelectedDispositions(p.disposition_in);
+    }
+
+    async function loadExisting() {
+      if (!configId) return;
+      try {
+        const url = isEmbedded
+          ? '/modules/bot-bezrealitky/configs/' + configId
+          : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
+        const res = await fetch(url, { credentials: 'same-origin' });
+        if (res.status === 404) {
+          isEditMode = false;
+          els.submit.textContent = 'Create bot';
+          return;
+        }
+        if (!res.ok) return;
+        const doc = await res.json();
+        isEditMode = true;
+        els.submit.textContent = 'Save changes';
+        const c = doc.config || {};
+        if (c.offer_type) els.offer.value = c.offer_type;
+        if (c.property_type) els.prop.value = c.property_type;
+        if (c.price_min != null) els.pmin.value = String(c.price_min);
+        if (c.price_max != null) els.pmax.value = String(c.price_max);
+        if (c.surface_min != null) els.smin.value = String(c.surface_min);
+        if (c.surface_max != null) els.smax.value = String(c.surface_max);
+        if (c.city_contains) els.city.value = c.city_contains;
+        if (Array.isArray(c.disposition_in)) setSelectedDispositions(c.disposition_in);
+        if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
+      } catch {}
+    }
+
+    function showImportMsg(kind, text) {
+      els.importMsg.className = 'alert ' + (kind === 'success' ? 'alert-success' : 'alert-error');
+      els.importMsg.textContent = text;
+      notifyResize();
+    }
+    function clearImportMsg() {
+      els.importMsg.className = 'help-inline';
+      els.importMsg.textContent = '';
+      notifyResize();
+    }
+
+    els.importBtn.addEventListener('click', async () => {
+      clearImportMsg();
+      const url = els.importUrl.value.trim();
+      if (!url) return;
+      els.importBtn.disabled = true;
+      try {
+        const endpoint = isEmbedded ? '/modules/bot-bezrealitky/parse-url' : '/parse-url';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: mergeHeaders({ 'Content-Type': 'application/json' }),
+          credentials: 'same-origin',
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        if (!data || !data.ok) {
+          showImportMsg('error', (data && data.reason) || 'Could not parse URL.');
+          return;
+        }
+        applyParsed(data.parsed || {});
+        showImportMsg('success', 'Filters imported from URL.');
+        els.importUrl.value = '';
+      } catch {
+        showImportMsg('error', 'Could not contact bot service to parse URL.');
+      } finally {
+        els.importBtn.disabled = false;
+      }
+    });
+    els.importUrl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); els.importBtn.click(); }
+    });
+
+    function buildConfig() {
+      return {
+        offer_type: els.offer.value || null,
+        property_type: els.prop.value || null,
+        price_min: intOrNull(els.pmin.value),
+        price_max: intOrNull(els.pmax.value),
+        surface_min: intOrNull(els.smin.value),
+        surface_max: intOrNull(els.smax.value),
+        city_contains: els.city.value.trim() || null,
+        disposition_in: getSelectedDispositions(),
+        title_keywords: csv(els.kw.value)
+      };
+    }
+
+    function showFormError(text) {
+      els.formMsg.className = 'alert alert-error';
+      els.formMsg.textContent = text;
+      notifyResize();
+    }
+    function showFormSuccess(text) {
+      els.formMsg.className = 'alert alert-success';
+      els.formMsg.textContent = text;
+      notifyResize();
+    }
+    function clearFormMsg() {
+      els.formMsg.className = '';
+      els.formMsg.textContent = '';
+    }
+
+    els.submit.addEventListener('click', async () => {
+      clearFormMsg();
+      const config = buildConfig();
+      if (isEmbedded) {
+        els.submit.disabled = true;
+        try {
+          const saveRes = await fetch('/modules/bot-bezrealitky/configs/' + configId, {
+            method: 'POST',
+            headers: mergeHeaders({ 'Content-Type': 'application/json' }),
+            credentials: 'same-origin',
+            body: JSON.stringify({ config: config })
+          });
+          if (!saveRes.ok) {
+            const j = await saveRes.json().catch(() => ({}));
+            showFormError(j.detail || j.message || 'Could not save bot.');
+            return;
+          }
+          window.parent.postMessage({ type: 'module:saved' }, PARENT_ORIGIN);
+        } catch {
+          showFormError('Could not save bot.');
+        } finally {
+          els.submit.disabled = false;
+        }
+      } else {
+        if (!userId) { showFormError('user_id query param is required when running standalone.'); return; }
+        els.submit.disabled = true;
+        try {
+          const res = await fetch('/configs/' + configId + '?user_id=' + encodeURIComponent(userId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: config })
+          });
+          if (!res.ok) {
+            showFormError('Could not save: HTTP ' + res.status);
+            return;
+          }
+          showFormSuccess('Saved.');
+        } catch {
+          showFormError('Could not contact bot service.');
+        } finally {
+          els.submit.disabled = false;
+        }
+      }
+    });
+
+    els.cancel.addEventListener('click', () => {
+      if (isEmbedded) window.parent.postMessage({ type: 'module:cancelled' }, PARENT_ORIGIN);
+      else history.back();
+    });
+
+    let lastHeight = 0;
+    function notifyResize() {
+      if (!isEmbedded) return;
+      const h = document.documentElement.scrollHeight;
+      if (h === lastHeight) return;
+      lastHeight = h;
+      window.parent.postMessage({ type: 'module:resize', height: h }, PARENT_ORIGIN);
+    }
+    if (isEmbedded) {
+      const ro = new ResizeObserver(notifyResize);
+      ro.observe(document.documentElement);
+      window.addEventListener('load', notifyResize);
+    }
+
+    window.addEventListener('message', (e) => {
+      if (e.origin !== PARENT_ORIGIN) return;
+      const data = e.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'module:set-theme') {
+        if (data.theme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }
+    });
+
+    loadExisting().then(notifyResize);
+  })();
+  </script>
+</body>
+</html>

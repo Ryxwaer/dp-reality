@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-bezrealitky
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/name: bot-bezrealitky
+data:
+  SERVICE_ID: bot-bezrealitky
+  DISPLAY_NAME: Bezrealitky
+  BASE_URL: http://bot-bezrealitky:8000
+  SCRAPE_INTERVAL_MINUTES: "10"
+  # Bezrealitky-specific anti-bot knobs (NFR-01-B). The thesis grants
+  # this bot the right to opt into stronger countermeasures than the
+  # other two: per-page throttle, long backoff window on a 429/403
+  # response, and a per-cycle cap on detail-page enrichment fetches.
+  SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: "2.0"
+  BACKOFF_MINUTES_ON_BLOCK: "30"
+  MAX_DETAIL_FETCHES_PER_CYCLE: "60"

@@ -90,6 +90,45 @@ services:
         - action: rebuild
           path: ./services/bot-sreality/package.json
 
+  bot-bezrealitky:
+    container_name: dp-reality-bot-bezrealitky
+    build:
+      context: .
+      dockerfile: services/bot-bezrealitky/Dockerfile
+    pull_policy: build
+    image: dp-reality-bot-bezrealitky:latest
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+      # See bot-bazos above: SERVICE_ID == compose service name == k8s
+      # Service name == module_registry.bot_id == path slug under
+      # /modules/<bot_id>/* on the BFF.
+      SERVICE_ID: bot-bezrealitky
+      DISPLAY_NAME: Bezrealitky
+      BASE_URL: http://bot-bezrealitky:8000
+      SCRAPE_INTERVAL_MINUTES: 10
+      # Bezrealitky-specific anti-bot knobs (NFR-01-B). Stronger than
+      # the other two bots: per-page throttle, post-block backoff,
+      # detail-fetch cap. See services/bot-bezrealitky/src/config.py.
+      SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: 2.0
+      BACKOFF_MINUTES_ON_BLOCK: 30
+      MAX_DETAIL_FETCHES_PER_CYCLE: 60
+    ports:
+      - "8003:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/bot-bezrealitky/src
+          target: /app/src
+        - action: rebuild
+          path: ./services/bot-bezrealitky/requirements.txt
+
   email-notifier:
     container_name: dp-reality-email-notifier
     build:

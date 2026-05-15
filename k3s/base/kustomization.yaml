@@ -8,6 +8,7 @@ resources:
 
   - configmaps/bot-bazos.yaml
   - configmaps/bot-sreality.yaml
+  - configmaps/bot-bezrealitky.yaml
   - configmaps/email-notifier.yaml
   - configmaps/frontend.yaml
 
@@ -17,6 +18,7 @@ resources:
   # key, so these files are decrypted at apply time.
   - secrets/bot-bazos.yaml
   - secrets/bot-sreality.yaml
+  - secrets/bot-bezrealitky.yaml
   - secrets/email-notifier.yaml
   - secrets/frontend.yaml
   - secrets/rabbitmq.yaml
@@ -33,6 +35,9 @@ resources:
 
   - bot-sreality/deployment.yaml
   - bot-sreality/service.yaml
+
+  - bot-bezrealitky/deployment.yaml
+  - bot-bezrealitky/service.yaml
 
   - email-notifier/deployment.yaml
 
