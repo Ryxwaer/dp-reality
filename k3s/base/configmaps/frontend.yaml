@@ -9,3 +9,4 @@ metadata:
     app.kubernetes.io/name: frontend
 data:
   NODE_ENV: production
+  OTEL_SERVICE_NAME: frontend

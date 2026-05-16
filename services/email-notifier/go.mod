@@ -1,10 +1,16 @@
 module dp-reality/email-notifier
 
-go 1.23
+go 1.25
 
 require (
 	github.com/rabbitmq/amqp091-go v1.10.0
 	go.mongodb.org/mongo-driver/v2 v2.0.0
+	go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo v0.0.0-20260430091547-f23aa114a3ba
+	go.opentelemetry.io/otel v1.40.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.40.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
+	go.opentelemetry.io/otel/sdk v1.40.0
+	go.opentelemetry.io/otel/trace v1.40.0
 )
 
 require (

@@ -30,6 +30,7 @@ spec:
           imagePullPolicy: Always
           envFrom:
             - configMapRef: { name: frontend }
+            - configMapRef: { name: otel-common }
             - secretRef:    { name: frontend }
           env:
             # Smoke-test marker so a no-op deploy triggers a Flagger

@@ -25,6 +25,7 @@ spec:
           imagePullPolicy: Always
           envFrom:
             - configMapRef: { name: bot-bazos }
+            - configMapRef: { name: otel-common }
             - secretRef:    { name: bot-bazos }
           ports:
             - { name: http, containerPort: 8000 }

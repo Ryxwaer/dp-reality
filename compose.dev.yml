@@ -19,6 +19,34 @@ services:
       timeout: 10s
       retries: 5
 
+  # Local-only Tempo single-binary so the OpenTelemetry SDKs in every
+  # service have a real OTLP/gRPC endpoint to push spans at while
+  # developing. Mirrors the production setup deployed via Flux
+  # (`flux/infra/prod/tempo.yaml`); see `dev/tempo.yaml` for the
+  # config rationale. The HTTP query API on :3200 is published so the
+  # operator can curl it from the host (e.g.
+  # `curl localhost:3200/api/search?tags=service.name%3Dbot-bezrealitky`)
+  # without needing a Grafana running locally.
+  tempo:
+    container_name: dp-reality-tempo
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./dev/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   bot-bazos:
     container_name: dp-reality-bot-bazos
     build:
@@ -43,10 +71,19 @@ services:
       SCRAPE_INTERVAL_MINUTES: 5
       SCRAPE_PAGES: 5
       GEO_SEED_MODE: missing
+      # OpenTelemetry — see services/bot-bazos/src/telemetry.py.
+      # OTLP/gRPC is what Tempo expects; the SDK reads these env vars
+      # via opentelemetry-sdk's standard env-config support.
+      OTEL_SERVICE_NAME: bot-bazos
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     ports:
       - "8001:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
@@ -76,10 +113,17 @@ services:
       DISPLAY_NAME: Sreality.cz
       BASE_URL: http://bot-sreality:8000
       SCRAPE_INTERVAL_MINUTES: 10
+      # OpenTelemetry — see services/bot-sreality/src/telemetry.ts.
+      OTEL_SERVICE_NAME: bot-sreality
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     ports:
       - "8002:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
@@ -115,10 +159,17 @@ services:
       MAX_DETAIL_FETCHES_PER_CYCLE: 60
       GEO_SEED_MODE: missing
       GEO_USER_AGENT: "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
+      # OpenTelemetry — see services/bot-bezrealitky/src/telemetry.py.
+      OTEL_SERVICE_NAME: bot-bezrealitky
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     ports:
       - "8003:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
@@ -150,8 +201,15 @@ services:
       # Unsubscribe links in dev emails point at the locally-exposed BFF.
       APP_BASE_URL: http://localhost:3000
       UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      # OpenTelemetry — see services/email-notifier/internal/telemetry.
+      OTEL_SERVICE_NAME: email-notifier
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
@@ -172,10 +230,17 @@ services:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      # OpenTelemetry — see services/frontend/server/plugins/-1-telemetry.ts.
+      OTEL_SERVICE_NAME: frontend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     ports:
       - "3000:3000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
@@ -196,6 +261,7 @@ services:
 
 volumes:
   rabbitmq_data:
+  tempo_data:
 
 networks:
   dp-reality:

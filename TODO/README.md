@@ -126,3 +126,39 @@ The following work is in production and no longer carries a TODO file:
   retention matches Prometheus' window so metric anomalies and log
   lines line up on the same timeline. Procedure + LogQL crib sheet:
   cf. `k3s/runbook.md` Phase D.
+- **Distributed tracing (Tempo + OpenTelemetry SDK across every
+  service)** — Tempo single-binary
+  (`flux/infra/prod/tempo.yaml`) had been waiting for span emitters
+  since the infrastructure round; every workload now has the SDK
+  initialised and OTLP-exports to `tempo.tracing.svc.cluster.local:4317`:
+  - Python bots (`bot-bazos`, `bot-bezrealitky`) — `setup_telemetry()`
+    in `src/telemetry.py` patches `aio_pika`, Motor's underlying
+    `pymongo`, `httpx`, and FastAPI; aio-pika auto-injects W3C
+    `traceparent` into AMQP message headers.
+  - NestJS bot (`bot-sreality`) — `src/telemetry.ts` is the first
+    import in `main.ts`; `@opentelemetry/auto-instrumentations-node`
+    covers `http`, `mongoose`, `mongodb`, `amqplib`.
+  - Frontend (`frontend`) — Nuxt/Nitro bundles its server, so the
+    SDK is started via Bun `--preload` (dev) and Node
+    `NODE_OPTIONS=--import` (prod) pointing at `otel-init.mjs`; a
+    plugin-based init runs too late to patch already-loaded modules.
+  - Email-notifier (`email-notifier`) — `internal/telemetry`
+    initialises the global tracer + W3C propagator,
+    `otelmongo.NewMonitor()` traces MongoDB, and the AMQP consumer
+    extracts `traceparent` from incoming `Headers` so the digest
+    span is a child of the publishing bot's span (the Tempo trace
+    spans `bot-* -> RabbitMQ -> email-notifier -> MongoDB` in a
+    single Gantt).
+  Wiring lives in `k3s/base/configmaps/otel-common.yaml` (shared
+  endpoint + protocol + resource attributes, included on every
+  Deployment via a second `envFrom`) and
+  `k3s/base/networkpolicies/tempo.yaml` (egress allow-rule to
+  `tracing/tempo:4317`, since the namespace's default-deny policy
+  would otherwise drop OTLP traffic). Tempo's `metrics_generator`
+  remote-writes `service_graph_*` and `traces_spanmetrics_*` into
+  Prometheus, which is what populates Grafana's Service Graph view
+  ("which service called which, with rate / error / p95 on every
+  edge"). Local verification: `compose.dev.yml` ships a Tempo
+  single-binary (`dev/tempo.yaml`), so
+  `curl localhost:3200/api/search/tag/service.name/values` shows
+  every instrumented service after one scrape cycle.

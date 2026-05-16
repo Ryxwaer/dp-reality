@@ -1,0 +1,21 @@
+# Shared OpenTelemetry environment for every workload in
+# `dp-reality/`. Every Deployment includes this ConfigMap via an
+# additional `envFrom`, so the only thing that needs to differ per
+# service is `OTEL_SERVICE_NAME` (set on each per-service ConfigMap).
+#
+# Endpoint resolves to the Tempo single-binary deployed by
+# `flux/infra/prod/tempo.yaml` in the `tracing` namespace. The
+# matching NetworkPolicy egress rule lives in
+# `k3s/base/networkpolicies/tempo.yaml` so the default-deny policy
+# does not silently drop OTLP traffic.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-common
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.tracing.svc.cluster.local:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod,service.namespace=dp-reality

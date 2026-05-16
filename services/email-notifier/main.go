@@ -11,10 +11,12 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo"
 
 	"dp-reality/email-notifier/internal/config"
 	"dp-reality/email-notifier/internal/consumer"
 	"dp-reality/email-notifier/internal/repository"
+	"dp-reality/email-notifier/internal/telemetry"
 )
 
 func main() {
@@ -24,7 +26,24 @@ func main() {
 
 	cfg := config.Load()
 
-	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
+	rootCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	shutdownTelemetry, err := telemetry.Setup(rootCtx)
+	if err != nil {
+		slog.Error("init telemetry failed", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		// Best-effort flush on a fresh context: rootCtx may already be
+		// cancelled by the time we reach this defer.
+		_ = shutdownTelemetry(context.Background())
+	}()
+
+	mongoOpts := options.Client().
+		ApplyURI(cfg.MongoURI).
+		SetMonitor(otelmongo.NewMonitor())
+	mongoClient, err := mongo.Connect(mongoOpts)
 	if err != nil {
 		slog.Error("connect to MongoDB failed", "err", err)
 		os.Exit(1)
@@ -43,11 +62,8 @@ func main() {
 
 	slog.Info("email-notifier connected", "rabbitmq", true, "mongodb", true)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	svc := consumer.New(cfg, repo)
-	if err := svc.Start(ctx, amqpConn); err != nil && err != context.Canceled {
+	if err := svc.Start(rootCtx, amqpConn); err != nil && err != context.Canceled {
 		slog.Error("consumer stopped", "err", err)
 	}
 }

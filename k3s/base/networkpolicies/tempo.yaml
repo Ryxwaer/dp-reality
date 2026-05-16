@@ -1,0 +1,31 @@
+# Egress allowance for OpenTelemetry trace export.
+#
+# Every workload in `dp-reality/` that has the OpenTelemetry SDK
+# initialised (every one of them does, see
+# `k3s/base/configmaps/otel-common.yaml`) needs to reach the Tempo
+# OTLP/gRPC receiver on `tempo.tracing.svc.cluster.local:4317`. The
+# default-deny policy in `default-deny.yaml` would otherwise drop the
+# spans silently.
+#
+# Selector is `{}` so every pod in the namespace gets the rule —
+# matches the same shape as `allow-dns.yaml`. Egress-only because
+# Tempo never connects back to us; ingress is left to the per-workload
+# policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tempo
+  namespace: dp-reality
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tracing
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - { protocol: TCP, port: 4317 }

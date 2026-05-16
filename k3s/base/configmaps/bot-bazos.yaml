@@ -17,3 +17,7 @@ data:
   # collection on first boot. See services/bot-bazos/src/geo.py.
   GEO_DATA_PATH: /data/CZ.txt
   GEO_SEED_MODE: missing
+  # Per-service tracing identity. The endpoint + protocol +
+  # resource attributes come from the shared `otel-common`
+  # ConfigMap, which the Deployment includes via a second envFrom.
+  OTEL_SERVICE_NAME: bot-bazos

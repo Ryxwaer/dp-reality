@@ -10,7 +10,7 @@ import motor.motor_asyncio
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from . import api, cycle, geo, repository
+from . import api, cycle, geo, repository, telemetry
 from .config import settings
 
 logging.basicConfig(
@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
+    # Init the SDK BEFORE constructing motor / aio_pika clients so the
+    # instrumentation patches the underlying drivers first.
+    telemetry.setup_telemetry()
+
     client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongodb_uri)
     db = client.get_default_database()
     await repository.ensure_indexes(db)
