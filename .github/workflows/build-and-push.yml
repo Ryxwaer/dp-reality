@@ -8,7 +8,6 @@ on:
       - '.github/workflows/build-and-push.yml'
   workflow_dispatch:
 
-# Lower-case repository owner is required for ghcr.io image names.
 env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}/dp-reality
@@ -18,27 +17,46 @@ permissions:
   packages: write
 
 jobs:
+  # The repo is the source of truth. Every directory under `services/`
+  # that contains a Dockerfile is a deployable service, full stop —
+  # no manual edits to this workflow needed when adding a new one.
+  #
+  # By default services are built multi-arch (amd64 + arm64) so they
+  # can run on the future RPi5 worker (TODO/deployment/02). The
+  # `frontend` is the documented exception: Nuxt's bundler under QEMU
+  # takes 40+ minutes for arm64 on x86 GHA runners with no real-world
+  # benefit, so it stays amd64-only until a real ARM64 BFF deployment
+  # is justified. Add other names to AMD64_ONLY below if/when needed.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: scan
+        run: |
+          AMD64_ONLY="frontend"
+          entries=()
+          for df in services/*/Dockerfile; do
+            name=$(basename "$(dirname "$df")")
+            if echo " $AMD64_ONLY " | grep -q " $name "; then
+              platforms="linux/amd64"
+            else
+              platforms="linux/amd64,linux/arm64"
+            fi
+            entries+=("{\"name\":\"$name\",\"dockerfile\":\"$df\",\"platforms\":\"$platforms\"}")
+          done
+          matrix=$(printf '%s\n' "${entries[@]}" | jq -sc '{include: .}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "Discovered matrix:"
+          echo "$matrix" | jq .
+
   build:
+    needs: discover
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        service:
-          # Bots + notifier are eligible to run on the ARM64 worker
-          # (RPi5) per TODO/deployment/02-node-placement-and-resources.md
-          # so we ship multi-arch manifests.
-          - { name: bot-bazos,       dockerfile: services/bot-bazos/Dockerfile,       platforms: "linux/amd64,linux/arm64" }
-          - { name: bot-sreality,    dockerfile: services/bot-sreality/Dockerfile,    platforms: "linux/amd64,linux/arm64" }
-          - { name: bot-bezrealitky, dockerfile: services/bot-bezrealitky/Dockerfile, platforms: "linux/amd64,linux/arm64" }
-          - { name: email-notifier,  dockerfile: services/email-notifier/Dockerfile,  platforms: "linux/amd64,linux/arm64" }
-          # Shared geo helper service (PSC → town/region resolution).
-          # Same node-placement rules as the bots, so multi-arch as well.
-          - { name: geo-cz,          dockerfile: services/geo-cz/Dockerfile,          platforms: "linux/amd64,linux/arm64" }
-          # The BFF is pinned to the amd64 Minisforum node per the same
-          # node-placement spec. Building arm64 under QEMU on the
-          # x86 GHA runner takes 40+ minutes (Nuxt is bundler-heavy);
-          # skip until a real ARM64 BFF deployment is justified.
-          - { name: frontend,       dockerfile: services/frontend/Dockerfile,       platforms: "linux/amd64" }
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -72,16 +90,16 @@ jobs:
           ts=$(date -u +%s)
           echo "tag=main-${short}-${ts}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push ${{ matrix.service.name }}
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.service.dockerfile }}
-          platforms: ${{ matrix.service.platforms }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:latest
-            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.service.name }}:${{ steps.build_id.outputs.tag }}
-          cache-from: type=gha,scope=${{ matrix.service.name }}
-          cache-to:   type=gha,scope=${{ matrix.service.name }},mode=max
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.name }}:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lower }}/dp-reality/${{ matrix.name }}:${{ steps.build_id.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to:   type=gha,scope=${{ matrix.name }},mode=max
