@@ -24,4 +24,4 @@ images:
   - name: ghcr.io/ryxwaer/dp-reality/geo-cz
     newTag: latest # {"$imagepolicy": "flux-system:geo-cz:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
-    newTag: main-cfe0f676-1778941106 # {"$imagepolicy": "flux-system:frontend:tag"}
+    newTag: main-95a89e88-1778945627 # {"$imagepolicy": "flux-system:frontend:tag"}
