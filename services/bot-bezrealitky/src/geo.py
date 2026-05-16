@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import unicodedata
 from typing import Any, Iterable
 
 import httpx
@@ -33,6 +34,13 @@ GEO_COLLECTION = "bezrealitky_geo"
 
 _BEZREALITKY_GRAPHQL = "https://api.bezrealitky.cz/graphql/"
 _NOMINATIM_LOOKUP = "https://nominatim.openstreetmap.org/lookup"
+_NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+
+
+def _normalise(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.casefold().strip()
 
 _CZECH_REGIONS_QUERY = """
 query CzechRegions($locale: Locale!) {
@@ -53,12 +61,15 @@ _BOUNDARY_POINT_RE = re.compile(r"(-?\d+\.\d+)\s+(-?\d+\.\d+)")
 async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     coll = db[GEO_COLLECTION]
     await coll.create_index("osm_id", unique=True, background=True, name="osm_id_unique")
-    await coll.create_index("name", background=True, name="name")
+    await coll.create_index("name_normalised", background=True, name="name_normalised")
     await coll.create_index([("location", "2dsphere")], background=True, name="location_2dsphere")
 
 
 def _projection() -> dict[str, int]:
-    return {"_id": 0, "osm_id": 1, "name": 1, "uri": 1, "type": 1, "location": 1}
+    return {
+        "_id": 0, "osm_id": 1, "name": 1, "display_name": 1,
+        "uri": 1, "type": 1, "location": 1,
+    }
 
 
 def _doc_to_record(doc: dict[str, Any]) -> dict[str, Any]:
@@ -66,6 +77,7 @@ def _doc_to_record(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "osm_id": doc.get("osm_id"),
         "name": doc.get("name"),
+        "display_name": doc.get("display_name"),
         "uri": doc.get("uri"),
         "type": doc.get("type"),
         "lat": coords[1],
@@ -160,13 +172,16 @@ async def _seed_from_bezrealitky(db: AsyncIOMotorDatabase) -> int:
                 f"could not derive centre for kraj {row.get('uri')!r} (osm_id={osm_id_raw})"
             )
         lon, lat = center
+        name = row.get("name") or ""
         operations.append(
             UpdateOne(
                 {"osm_id": int(osm_id_raw)},
                 {
                     "$set": {
                         "osm_id": int(osm_id_raw),
-                        "name": row.get("name"),
+                        "name": name,
+                        "name_normalised": _normalise(name),
+                        "display_name": name,
                         "uri": row.get("uri"),
                         "type": row.get("type"),
                         "location": {"type": "Point", "coordinates": [lon, lat]},
@@ -212,12 +227,14 @@ async def resolve_via_nominatim(osm_id: int) -> dict[str, Any]:
 async def upsert_resolved(
     db: AsyncIOMotorDatabase, record: dict[str, Any]
 ) -> None:
+    name = record.get("name") or ""
     await db[GEO_COLLECTION].update_one(
         {"osm_id": record["osm_id"]},
         {
             "$set": {
                 "osm_id": record["osm_id"],
-                "name": record.get("name"),
+                "name": name,
+                "name_normalised": _normalise(name),
                 "uri": record.get("uri"),
                 "type": record.get("type"),
                 "display_name": record.get("display_name"),
@@ -229,6 +246,85 @@ async def upsert_resolved(
         },
         upsert=True,
     )
+
+
+async def search_local(
+    db: AsyncIOMotorDatabase, query: str, limit: int
+) -> list[dict[str, Any]]:
+    needle = _normalise(query)
+    if not needle:
+        return []
+    coll = db[GEO_COLLECTION]
+    exact = [
+        _doc_to_record(d)
+        async for d in coll.find(
+            {"name_normalised": needle}, projection=_projection()
+        ).limit(limit)
+    ]
+    if len(exact) >= limit:
+        return exact
+    seen = {r["osm_id"] for r in exact}
+    prefix_cursor = coll.find(
+        {"name_normalised": {"$regex": "^" + re.escape(needle)}},
+        projection=_projection(),
+    ).limit(limit * 2)
+    async for doc in prefix_cursor:
+        rec = _doc_to_record(doc)
+        if rec["osm_id"] in seen:
+            continue
+        exact.append(rec)
+        seen.add(rec["osm_id"])
+        if len(exact) >= limit:
+            break
+    return exact
+
+
+async def search_nominatim(
+    query: str, limit: int = 8
+) -> list[dict[str, Any]]:
+    """Free-text search via Nominatim, restricted to CZ + SK administrative units.
+
+    Returns the same record shape as `find_by_osm_id` so the UI can
+    treat both sources uniformly. Caller is responsible for caching
+    selected hits via `upsert_resolved` once the user picks one.
+    """
+    headers = {"User-Agent": settings.geo_user_agent, "Accept": "application/json"}
+    params = {
+        "q": query,
+        "format": "json",
+        "addressdetails": "1",
+        "limit": str(limit),
+        "countrycodes": "cz,sk",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(_NOMINATIM_SEARCH, params=params, headers=headers)
+        resp.raise_for_status()
+        rows = resp.json()
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if row.get("osm_type") != "relation":
+            continue
+        osm_id = row.get("osm_id")
+        if osm_id is None:
+            continue
+        addr = row.get("address") or {}
+        name = (
+            row.get("name")
+            or addr.get("city")
+            or addr.get("town")
+            or addr.get("village")
+            or addr.get("municipality")
+            or ""
+        )
+        out.append({
+            "osm_id": int(osm_id),
+            "name": name,
+            "display_name": row.get("display_name"),
+            "type": row.get("type"),
+            "lat": float(row["lat"]),
+            "lon": float(row["lon"]),
+        })
+    return out
 
 
 async def resolve_or_fetch(
