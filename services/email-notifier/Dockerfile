@@ -1,4 +1,10 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
+
+# git is needed for `go mod tidy` to fall back to direct VCS fetches
+# when a module isn't available via the proxy (the
+# `otelmongo` contrib module for the v2 driver is currently in that
+# bucket).
+RUN apk add --no-cache git
 
 WORKDIR /app
 

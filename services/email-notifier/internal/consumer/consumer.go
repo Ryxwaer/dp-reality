@@ -26,10 +26,14 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"dp-reality/email-notifier/internal/config"
 	"dp-reality/email-notifier/internal/emailer"
 	"dp-reality/email-notifier/internal/repository"
+	"dp-reality/email-notifier/internal/telemetry"
 )
 
 const (
@@ -120,21 +124,47 @@ func (s *Service) startProcessed(ctx context.Context, conn *amqp.Connection) err
 // error along the way nacks for redelivery (the broker's redelivery
 // will re-try; persistent failures end up dead-lettered per the broker
 // policy). We do NOT ack on failure — that would silently drop work.
+//
+// The incoming AMQP headers carry a W3C `traceparent` injected by the
+// publishing bot's auto-instrumentation; extracting it links our
+// digest span into the same trace as the scrape cycle that produced
+// the event.
 func (s *Service) handle(ctx context.Context, msg amqp.Delivery) {
+	ctx = telemetry.ExtractAMQP(ctx, msg.Headers)
+	ctx, span := telemetry.Tracer().Start(ctx, "notify.bot.processed receive",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "rabbitmq"),
+			attribute.String("messaging.destination.name", exchangeName),
+			attribute.String("messaging.operation", "receive"),
+		))
+	defer span.End()
+
 	var ev Event
 	if err := json.Unmarshal(msg.Body, &ev); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "malformed event")
 		slog.Warn("dropping malformed event", "err", err)
 		_ = msg.Nack(false, false)
 		return
 	}
 	if ev.UserID == "" || ev.BotID == "" {
+		span.SetStatus(codes.Error, "missing fields")
 		slog.Warn("dropping event with missing fields",
 			"user_id", ev.UserID, "bot_id", ev.BotID)
 		_ = msg.Nack(false, false)
 		return
 	}
 
+	span.SetAttributes(
+		attribute.String("user.id", ev.UserID),
+		attribute.String("bot.id", ev.BotID),
+		attribute.String("run.id", ev.RunID),
+	)
+
 	if err := s.flush(ctx, ev.UserID, ev.BotID); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "flush failed")
 		slog.Error("flush failed; requeueing",
 			"user_id", ev.UserID, "bot_id", ev.BotID, "err", err)
 		_ = msg.Nack(false, true)

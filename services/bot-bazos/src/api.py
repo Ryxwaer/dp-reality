@@ -11,7 +11,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import geo, repository, welcome
+from . import geo, repository, telemetry, welcome
 from .config import settings
 from .models import BotConfig
 
@@ -205,4 +205,5 @@ def build_app(
     app.state.db = db
     app.state.rabbitmq = rabbitmq
     app.include_router(build_router())
+    telemetry.instrument_fastapi(app)
     return app

@@ -8,3 +8,12 @@ pydantic==2.11.1
 apscheduler==3.11.0
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+
+# OpenTelemetry — see services/bot-bezrealitky/requirements.txt for
+# the rationale; same wires, same SDK, same versions.
+opentelemetry-sdk==1.28.2
+opentelemetry-exporter-otlp-proto-grpc==1.28.2
+opentelemetry-instrumentation-aio-pika==0.49b2
+opentelemetry-instrumentation-pymongo==0.49b2
+opentelemetry-instrumentation-httpx==0.49b2
+opentelemetry-instrumentation-fastapi==0.49b2

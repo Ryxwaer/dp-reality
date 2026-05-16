@@ -12,3 +12,4 @@ data:
   DISPLAY_NAME: Sreality.cz
   BASE_URL: http://bot-sreality:8000
   SCRAPE_INTERVAL_MINUTES: "10"
+  OTEL_SERVICE_NAME: bot-sreality

@@ -29,4 +29,5 @@ spec:
           imagePullPolicy: Always
           envFrom:
             - configMapRef: { name: email-notifier }
+            - configMapRef: { name: otel-common }
             - secretRef:    { name: email-notifier }

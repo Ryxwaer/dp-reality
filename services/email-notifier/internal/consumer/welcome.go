@@ -20,9 +20,13 @@ import (
 	"log/slog"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"dp-reality/email-notifier/internal/emailer"
 	"dp-reality/email-notifier/internal/repository"
+	"dp-reality/email-notifier/internal/telemetry"
 )
 
 const (
@@ -89,19 +93,38 @@ func (s *Service) startWelcome(ctx context.Context, conn *amqp.Connection) error
 }
 
 func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
+	ctx = telemetry.ExtractAMQP(ctx, msg.Headers)
+	ctx, span := telemetry.Tracer().Start(ctx, "notify.bot.welcome receive",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "rabbitmq"),
+			attribute.String("messaging.destination.name", welcomeExchangeName),
+			attribute.String("messaging.operation", "receive"),
+		))
+	defer span.End()
+
 	var ev WelcomeEvent
 	if err := json.Unmarshal(msg.Body, &ev); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "malformed event")
 		slog.Warn("welcome: dropping malformed event", "err", err)
 		_ = msg.Nack(false, false)
 		return
 	}
 	if ev.UserID == "" || ev.ConfigID == "" || ev.HTML == "" {
+		span.SetStatus(codes.Error, "missing fields")
 		slog.Warn("welcome: dropping event with missing fields",
 			"user_id", ev.UserID, "config_id", ev.ConfigID,
 			"bot_id", ev.BotID, "html_len", len(ev.HTML))
 		_ = msg.Nack(false, false)
 		return
 	}
+
+	span.SetAttributes(
+		attribute.String("user.id", ev.UserID),
+		attribute.String("bot.id", ev.BotID),
+		attribute.String("config.id", ev.ConfigID),
+	)
 
 	user, err := s.repo.FetchUser(ctx, ev.UserID)
 	if err != nil {

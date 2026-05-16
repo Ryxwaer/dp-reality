@@ -39,6 +39,15 @@ services:
       BASE_URL: http://bot-bazos:8000
       SCRAPE_INTERVAL_MINUTES: 5
       SCRAPE_PAGES: 5
+      # Distributed tracing — points at the in-cluster Tempo when
+      # this stack runs alongside the K3s deployment, otherwise
+      # leave OTEL_EXPORTER_OTLP_ENDPOINT unset to make the SDK
+      # silently no-op (the legacy Portainer/Compose target has no
+      # local Tempo).
+      OTEL_SERVICE_NAME: bot-bazos
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -63,6 +72,10 @@ services:
       DISPLAY_NAME: Sreality.cz
       BASE_URL: http://bot-sreality:8000
       SCRAPE_INTERVAL_MINUTES: 10
+      OTEL_SERVICE_NAME: bot-sreality
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -93,6 +106,10 @@ services:
       SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: 2.0
       BACKOFF_MINUTES_ON_BLOCK: 30
       MAX_DETAIL_FETCHES_PER_CYCLE: 60
+      OTEL_SERVICE_NAME: bot-bezrealitky
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -117,6 +134,10 @@ services:
       MAIL_FROM_EMAIL: noreply@ryxwaer.com
       APP_BASE_URL: https://reality.ryxwaer.com
       UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      OTEL_SERVICE_NAME: email-notifier
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -135,6 +156,10 @@ services:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      OTEL_SERVICE_NAME: frontend
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
     depends_on:
       rabbitmq:
         condition: service_healthy
