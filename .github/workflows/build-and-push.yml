@@ -31,6 +31,9 @@ jobs:
           - { name: bot-sreality,    dockerfile: services/bot-sreality/Dockerfile,    platforms: "linux/amd64,linux/arm64" }
           - { name: bot-bezrealitky, dockerfile: services/bot-bezrealitky/Dockerfile, platforms: "linux/amd64,linux/arm64" }
           - { name: email-notifier,  dockerfile: services/email-notifier/Dockerfile,  platforms: "linux/amd64,linux/arm64" }
+          # Shared geo helper service (PSC → town/region resolution).
+          # Same node-placement rules as the bots, so multi-arch as well.
+          - { name: geo-cz,          dockerfile: services/geo-cz/Dockerfile,          platforms: "linux/amd64,linux/arm64" }
           # The BFF is pinned to the amd64 Minisforum node per the same
           # node-placement spec. Building arm64 under QEMU on the
           # x86 GHA runner takes 40+ minutes (Nuxt is bundler-heavy);
