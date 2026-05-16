@@ -41,6 +41,10 @@ host. NPM keeps owning TLS and reverse-proxies
 
 - Manifests: `k3s/base/` + `k3s/overlays/prod/`.
 - Operator runbook: [`k3s/runbook.md`](k3s/runbook.md).
+- Adding a new deployable service is a checklist of files to create
+  + push (no manual `kubectl` step): see
+  [Adding a new deployable service](k3s/runbook.md#adding-a-new-deployable-service)
+  in the runbook.
 - MongoDB lives inside the cluster as a single-member replica set
   (`dp-rs`); it is independent of any external Mongo the host may
   already run.

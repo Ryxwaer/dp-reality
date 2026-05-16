@@ -631,6 +631,129 @@ Same as 3.3 — open with `sops`, set a new value, save, commit, push.
 The kustomize-controller applies the new ciphertext, K8s mutates the
 Secret, and the env-var checksum change rolls the consuming pods.
 
+## Adding a new deployable service
+
+The repo is the source of truth for every deployable component, so
+adding a new bot / helper / sidecar should be a matter of creating
+files and pushing — no `kubectl apply` from a workstation, no "I'll
+finish setting this up later" steps. The checklist below covers
+*every* file an operator must touch; if you skip one of them the
+deploy will fail in a visible way (image won't build, pod stays in
+ImagePullBackOff, tag never bumps, secret applied as plaintext, …).
+
+### A. Code
+
+- `services/<name>/Dockerfile` — multi-stage if helpful, must
+  produce an `amd64` (and ideally `arm64`) image.
+- `services/<name>/src/` — the implementation. The contract the BFF
+  reverse-proxies against (for bots) is documented in the thesis
+  §3.6 and demonstrated by `services/bot-bazos/`.
+- `services/<name>/requirements.txt` (Python) or `package.json`
+  (Node).
+
+The CI **build matrix is auto-discovered** from `services/*/Dockerfile`
+(see `.github/workflows/build-and-push.yml`). Default platforms are
+`linux/amd64,linux/arm64`. Add the service name to the `AMD64_ONLY`
+list in that workflow if QEMU cross-build is too slow (currently only
+`frontend`).
+
+### B. Cluster manifests
+
+- `k3s/base/<name>/deployment.yaml` — Deployment with the standard
+  three labels (`app.kubernetes.io/part-of: dp-reality`,
+  `component: <bot|bff|notifier|geo|…>`, `name: <name>`),
+  `envFrom: [{configMapRef: <name>}, {secretRef: <name>}]`,
+  `readinessProbe` and `livenessProbe` against `/healthz`.
+- `k3s/base/<name>/service.yaml` — ClusterIP Service, same selector
+  labels as the Deployment, port 8000 by convention.
+- `k3s/base/configmaps/<name>.yaml` — non-secret env (`SERVICE_ID`,
+  `BASE_URL`, scrape intervals, …).
+- `k3s/base/secrets/<name>.yaml` — **MUST be SOPS-encrypted** before
+  commit (cf. §3.4). Author the YAML with plaintext `stringData:`,
+  then `sops --encrypt --in-place k3s/base/secrets/<name>.yaml`.
+- Wire all four entries into `k3s/base/kustomization.yaml`.
+
+### C. NetworkPolicy
+
+The default-deny policy blocks all pod-to-pod traffic; per-component
+allow-lists in `k3s/base/networkpolicies/` open the required edges.
+The existing `bots.yaml` policy matches every Pod with
+`app.kubernetes.io/component: bot`, so a new bot is covered the
+moment its Deployment carries that label — no policy edit needed.
+For other component classes (`geo`, `db`, …) add a new policy file
+and wire it into the kustomization.
+
+### D. Continuous delivery (Flux)
+
+- `flux/clusters/prod/image-policies.yaml` — append an
+  `ImageRepository` + `ImagePolicy` pair for the new image. Copy
+  the existing `bot-bazos` block; only the `name:` and `image:`
+  lines change.
+- `k3s/overlays/prod/kustomization.yaml` — append an entry under
+  `images:`:
+
+  ```yaml
+  - name: ghcr.io/ryxwaer/dp-reality/<name>
+    newTag: latest # {"$imagepolicy": "flux-system:<name>:tag"}
+  ```
+
+  `latest` is the cold-start value; `image-update-automation` rewrites
+  it to a sortable `main-<sha>-<epoch>` tag on the first reconcile.
+
+### E. Optional surfaces
+
+- **Tailnet exposure**: add `tailscale.com/expose: "true"` and
+  `tailscale.com/hostname: <name>` annotations to the Service (cf.
+  Phase C).
+- **Public web access**: only the `frontend` is supposed to be on the
+  public ingress (thesis §3.7.3). New services are expected to be
+  consumed peer-to-peer inside the cluster.
+- **Progressive delivery**: only the `frontend` runs through Flagger
+  (cf. §B.4 for the rationale). Bots and helpers reroll directly via
+  Flux Server-Side Apply.
+- **Compose mirror**: if you want the service to spin up under
+  `compose.yml` / `compose.dev.yml` for local dev, add a service
+  block that mirrors the K8s Deployment env. This is convention, not
+  required — production never uses compose.
+
+### F. Ship it
+
+```bash
+git add -A
+git commit -m "feat(<name>): …"
+git push
+```
+
+The pipeline:
+
+1. `build-and-push` discovers the new `services/<name>/Dockerfile`
+   and builds + pushes a multi-arch image to GHCR.
+2. `secrets-lint` confirms every `k3s/base/secrets/*.yaml` is
+   SOPS-encrypted (it'll fail loudly if you forgot to encrypt step
+   B.4).
+3. Flux's `image-reflector` notices the new GHCR tag, the
+   `ImagePolicy` resolves it, and `image-update-automation`
+   rewrites the `newTag:` line in
+   `k3s/overlays/prod/kustomization.yaml` and pushes a
+   `chore(images): bump image tags` commit.
+4. The `dp-reality` Kustomization reconciles, applies the
+   Deployment/Service/ConfigMap/Secret, the kustomize-controller
+   decrypts the SOPS-encrypted Secret in memory and creates it,
+   and the new pod rolls out.
+
+### What the cluster does *not* know about CI
+
+Flux is a pull-based loop and does not consult GitHub Actions
+status. A red `secrets-lint` does not stop Flux from applying a
+plaintext Secret. If you push something that fails CI:
+
+- Fix forward and push a new commit, or
+- Revert the offending commit. Either way Flux converges on
+  whatever HEAD on `main` says.
+
+The corollary: **don't push secrets in plaintext**. The encryption
+step in B.4 is not optional.
+
 ## Phase B — Ingress + Metrics + Progressive Delivery
 
 Closes the "failed deployments trigger automatic rollback" claim in
