@@ -56,7 +56,16 @@ export default defineNuxtConfig({
       traceInclude: [
         './node_modules/undici/index.js',
         './node_modules/jsdom/lib/api.js',
-        './node_modules/isomorphic-dompurify/dist/index.js'
+        './node_modules/isomorphic-dompurify/dist/index.js',
+        // OpenTelemetry's `@opentelemetry/instrumentation` package and
+        // every contrib module under `auto-instrumentations-node` is
+        // loaded via `require-in-the-middle` at SDK start, which
+        // bypasses Vercel/NFT's static import tracer the same way
+        // jsdom→undici does. List the entry points so NFT copies
+        // every transitive instrumentation file into `.output/`.
+        './node_modules/@opentelemetry/auto-instrumentations-node/build/src/index.js',
+        './node_modules/@opentelemetry/sdk-node/build/src/index.js',
+        './node_modules/@opentelemetry/exporter-trace-otlp-grpc/build/src/index.js'
       ]
     }
   },

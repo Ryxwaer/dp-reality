@@ -12,3 +12,4 @@ data:
   MAIL_SMTP_PORT: "587"
   MAIL_FROM_EMAIL: noreply@ryxwaer.com
   APP_BASE_URL: https://reality.ryxwaer.com
+  OTEL_SERVICE_NAME: email-notifier

@@ -20,3 +20,4 @@ data:
   GEO_SEED_MODE: missing
   # Required by Nominatim's usage policy — keep the contact in there.
   GEO_USER_AGENT: "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
+  OTEL_SERVICE_NAME: bot-bezrealitky

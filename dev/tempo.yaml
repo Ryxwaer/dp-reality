@@ -1,0 +1,59 @@
+# Tempo single-binary config for the local dev stack. Mirrors the
+# minimum subset of `flux/infra/prod/tempo.yaml`'s Helm values that
+# matters for "spans land, traces queryable, service-graph metrics
+# generated": OTLP gRPC + HTTP receivers, local block storage, and the
+# metrics_generator turning every span into service_graph_* and
+# traces_spanmetrics_* feeds. The dev stack has no Prometheus, so the
+# generator's remote_write target is unset (the chart provides one in
+# prod); generated metrics stay in Tempo's in-memory registry only.
+stream_over_http_enabled: true
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 24h
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: dp-reality-dev
+  storage:
+    path: /var/tempo/generator-wal
+  traces_storage:
+    path: /var/tempo/generator-traces
+  processor:
+    service_graphs:
+      wait: 10s
+      max_items: 10000
+    span_metrics:
+      enable_target_info: true
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics

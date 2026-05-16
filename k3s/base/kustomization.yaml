@@ -6,6 +6,7 @@ namespace: dp-reality
 resources:
   - namespace.yaml
 
+  - configmaps/otel-common.yaml
   - configmaps/bot-bazos.yaml
   - configmaps/bot-sreality.yaml
   - configmaps/bot-bezrealitky.yaml
@@ -51,6 +52,7 @@ resources:
 
   - networkpolicies/default-deny.yaml
   - networkpolicies/allow-dns.yaml
+  - networkpolicies/tempo.yaml
   - networkpolicies/frontend.yaml
   - networkpolicies/bots.yaml
   - networkpolicies/email-notifier.yaml
