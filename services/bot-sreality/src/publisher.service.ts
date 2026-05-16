@@ -2,19 +2,6 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import * as amqp from 'amqplib';
 import { config } from './config.js';
 
-// Two fanout exchanges, two contracts:
-//   - notify.bot.processed: a scrape cycle finished and produced at
-//     least one notification row for `user_id` across one-or-more of
-//     that user's configs in this bot service. Emitted exactly once
-//     per (user, bot, run); payload is a pointer tuple, consumers
-//     read from the shared notifications collection. Per-config
-//     grouping is a downstream concern — bot services intentionally
-//     do not emit one event per config because the cycle, not the
-//     config, is what completed.
-//   - notify.bot.welcome: a brand-new per-user configuration has been
-//     saved; payload is event-carried state (subject + pre-rendered
-//     HTML) so the notifier never needs to touch the listings
-//     collection.
 const EXCHANGE_PROCESSED = 'notify.bot.processed';
 const EXCHANGE_WELCOME = 'notify.bot.welcome';
 

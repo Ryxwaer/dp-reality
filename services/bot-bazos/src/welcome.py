@@ -6,9 +6,8 @@ from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from . import matcher, publisher, repository
+from . import geo, matcher, publisher, repository
 from .config import settings
-from .geo_client import geo_client
 from .models import BotConfig, Listing
 
 logger = logging.getLogger(__name__)
@@ -50,8 +49,8 @@ def _format_filter_summary(cfg: BotConfig) -> str:
         parts.append(f"within {cfg.radius_km} km of PSČ {cfg.psc}")
     elif cfg.psc:
         parts.append(f"PSČ {cfg.psc}")
-    if cfg.title_keywords:
-        parts.append("matching " + ", ".join(f'"{k}"' for k in cfg.title_keywords))
+    if cfg.keywords:
+        parts.append("matching " + ", ".join(f'"{k}"' for k in cfg.keywords))
     return " · ".join(parts)
 
 
@@ -65,7 +64,7 @@ async def _count_matching(db: AsyncIOMotorDatabase, cfg: BotConfig) -> int:
     """
     allowed_pscs: set[str] | None = None
     if cfg.psc and cfg.radius_km:
-        allowed_pscs = await geo_client.in_radius_by_psc(cfg.psc, cfg.radius_km)
+        allowed_pscs = await geo.in_radius_by_psc(db, cfg.psc, cfg.radius_km)
 
     cursor = db[repository.LISTINGS_COLLECTION].find({})
     docs = await cursor.to_list(length=None)

@@ -1,21 +1,10 @@
-"""Bezrealitky notification card composition.
-
-Same anchor-free contract as the other two bots: the structured `url`
-on the notification row is wrapped by each consumer in a tile-wide
-<a>. The HTML body itself contains no anchors.
-
-Bezrealitky-specific touch: the card optionally includes a single
-thumbnail (`<img>`) when the detail fetch returned at least one photo
-URL. The shared sanitiser whitelists `<img>` with `src`, `alt`,
-`width`, `height`, so the image renders in the inbox and in the
-email envelope without further work.
-"""
+"""Bezrealitky notification card composition."""
 from __future__ import annotations
 
 import html as html_lib
 from typing import Any
 
-from .models import Listing
+from .models import Condition, Listing, Ownership
 
 _PRICE_LABELS = {"sale": "Sale", "rent": "Rent / mo"}
 _PROPERTY_LABELS = {
@@ -25,6 +14,25 @@ _PROPERTY_LABELS = {
     "commercial": "Commercial",
     "other": "Other",
 }
+_OWNERSHIP_LABELS: dict[Ownership, str] = {
+    Ownership.OSOBNI: "Personal",
+    Ownership.DRUZSTEVNI: "Cooperative",
+    Ownership.OBECNI: "Municipal",
+    Ownership.OSTATNI: "Other ownership",
+}
+_CONDITION_LABELS: dict[Condition, str] = {
+    Condition.VERY_GOOD: "Very good",
+    Condition.GOOD: "Good",
+    Condition.BAD: "Bad",
+    Condition.CONSTRUCTION: "Under construction",
+    Condition.PROJECT: "Project",
+    Condition.NEW: "New",
+    Condition.DEMOLITION: "Demolition",
+    Condition.BEFORE_RECONSTRUCTION: "Before reconstruction",
+    Condition.AFTER_RECONSTRUCTION: "After reconstruction",
+    Condition.AFTER_PARTIAL_RECONSTRUCTION: "After partial reconstruction",
+    Condition.IN_RECONSTRUCTION: "In reconstruction",
+}
 
 _DESC_MAX_CHARS = 220
 
@@ -33,25 +41,26 @@ def _esc(value: str | None) -> str:
     return html_lib.escape(value) if value else ""
 
 
-def _format_price(value: int | None, price_type: str) -> str:
+def _format_price(value: int | None, price_type: str, currency: str) -> str:
     if value is None:
         return "Price on request"
     formatted = f"{value:,}".replace(",", " ")
     label = _PRICE_LABELS.get(price_type, price_type.title())
-    return f"{formatted} CZK · {label}"
+    return f"{formatted} {currency} · {label}"
 
 
 def _format_locality(listing: Listing) -> str:
     bits: list[str] = []
+    if listing.street:
+        bits.append(listing.street)
     if listing.city:
         bits.append(listing.city)
-    if listing.district:
+    if listing.district and listing.district not in (listing.city or ""):
         bits.append(listing.district)
     return " · ".join(bits) if bits else "Czechia"
 
 
 def _format_meta(listing: Listing) -> str:
-    """Right-aligned chip: property type · disposition · surface."""
     bits: list[str] = []
     label = _PROPERTY_LABELS.get(listing.property_type.value, "")
     if label:
@@ -60,6 +69,10 @@ def _format_meta(listing: Listing) -> str:
         bits.append(listing.disposition)
     if listing.surface_m2:
         bits.append(f"{listing.surface_m2} m\u00b2")
+    if listing.condition and listing.condition in _CONDITION_LABELS:
+        bits.append(_CONDITION_LABELS[listing.condition])
+    if listing.ownership and listing.ownership in _OWNERSHIP_LABELS:
+        bits.append(_OWNERSHIP_LABELS[listing.ownership])
     if listing.energy_class:
         bits.append(f"PENB {listing.energy_class}")
     return " · ".join(bits)
@@ -73,11 +86,10 @@ def _truncate(text: str, limit: int) -> str:
 
 
 def render_card(listing: Listing) -> str:
-    """Return the inline-styled HTML card for one matched listing."""
     title = _esc(listing.title) or "(untitled listing)"
     locality = _esc(_format_locality(listing))
     meta = _esc(_format_meta(listing))
-    price_line = _esc(_format_price(listing.price, listing.price_type.value))
+    price_line = _esc(_format_price(listing.price, listing.price_type.value, listing.currency))
 
     image_html = ""
     if listing.photos:

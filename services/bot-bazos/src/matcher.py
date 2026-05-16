@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
 from .models import BotConfig, Listing
 
 
-def _matches_keyword(text: str | None, keywords: list[str]) -> bool:
+def _matches_keywords(parts: Iterable[str | None], keywords: list[str]) -> bool:
+    """All keywords must appear (case-insensitive) somewhere in the
+    concatenation of `parts`. Empty `keywords` is a wildcard.
+    """
     if not keywords:
         return True
-    if not text:
+    haystack = " ".join(p for p in parts if p).lower()
+    if not haystack:
         return False
-    haystack = text.lower()
     return all(k.lower() in haystack for k in keywords)
 
 
@@ -23,9 +26,10 @@ def matches(
     """Decide whether a listing should produce a notification for this config.
 
     `allowed_pscs` is the precomputed set of PSČs returned by
-    geo-cz `/in-radius` for `(config.psc, config.radius_km)`. The matcher
-    is intentionally sync and HTTP-free; the cycle resolves the radius
-    upstream so it pays the network cost once per (config, cycle).
+    `geo.in_radius_by_psc` for `(config.psc, config.radius_km)`. The
+    matcher is intentionally sync and IO-free; the cycle pre-resolves
+    the radius via the bot's private `bazos_geo` collection once per
+    (config, cycle).
 
     Fail-closed on the radius filter: if the user asked for a radius and
     the listing has no PSČ, we cannot prove inclusion and refuse to
@@ -47,7 +51,7 @@ def matches(
     elif config.psc and not config.radius_km:
         if listing.psc != config.psc:
             return False
-    if not _matches_keyword(listing.title, config.title_keywords):
+    if not _matches_keywords((listing.title, listing.description), config.keywords):
         return False
     return True
 

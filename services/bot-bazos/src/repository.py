@@ -71,7 +71,8 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
         pass
 
     # Removed: `city_contains` and `psc_prefix` from config docs (replaced
-    # by `psc` + `radius_km` resolved via the geo-cz service).
+    # by `psc` + `radius_km` resolved against the private `bazos_geo`
+    # collection — see src/geo.py).
     res = await db[CONFIG_COLLECTION].update_many(
         {"$or": [
             {"config.city_contains": {"$exists": True}},
@@ -81,6 +82,15 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
     )
     if res.modified_count:
         logger.info("migrate: stripped legacy config fields from %d configs", res.modified_count)
+
+    # Renamed: `title_keywords` -> `keywords` (now matches against title
+    # AND description, so the old name is a misnomer).
+    res = await db[CONFIG_COLLECTION].update_many(
+        {"config.title_keywords": {"$exists": True}},
+        {"$rename": {"config.title_keywords": "config.keywords"}},
+    )
+    if res.modified_count:
+        logger.info("migrate: renamed title_keywords -> keywords on %d configs", res.modified_count)
 
 
 async def upsert_listings(

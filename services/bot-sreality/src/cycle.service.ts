@@ -17,12 +17,9 @@ export class CycleService {
     private readonly publisher: PublisherService,
   ) {}
 
-  // For each user's active configuration, evaluate the matcher against
-  // the newly-inserted listings. The repository upsert collapses two
-  // matching configs of the same user/bot/listing into a single row
-  // (config_ids[] tracks which configs hit). We publish exactly one
-  // notify.bot.processed per (user, bot, run) for which at least one
-  // new row was created in this cycle.
+  // Evaluate every active configuration against the freshly inserted
+  // listings and publish exactly one notify.bot.processed per (user,
+  // bot, run) for which at least one new notification row was inserted.
   async matchAndNotify(newListings: Listing[], runId: string): Promise<void> {
     if (!newListings.length) return;
 
@@ -61,17 +58,11 @@ export class CycleService {
     }
 
     for (const userId of usersWithInserts) {
-      try {
-        await this.publisher.publishBotProcessed({
-          userId,
-          botId: config.serviceId,
-          runId,
-        });
-      } catch (err) {
-        this.logger.warn(
-          `publish notify.bot.processed failed (rows persisted): ${(err as Error).message}`,
-        );
-      }
+      await this.publisher.publishBotProcessed({
+        userId,
+        botId: config.serviceId,
+        runId,
+      });
     }
   }
 }

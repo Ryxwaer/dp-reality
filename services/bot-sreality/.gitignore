@@ -1,0 +1,4 @@
+# Region catalogue dumped by `scripts/dump-regions.ts`. Built fresh
+# inside the Docker image at build time; the local copy is a dev
+# convenience and should not be committed.
+data/regions.json

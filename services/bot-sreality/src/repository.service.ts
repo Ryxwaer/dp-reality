@@ -20,9 +20,6 @@ export class RepositoryService {
     @InjectModel(ModuleRegistryEntry.name) private readonly registryModel: Model<ModuleRegistryEntry>,
   ) {}
 
-  // Upsert listings; return docs that were newly inserted (used by the
-  // matcher loop). `runId` is stamped via $setOnInsert so re-sightings
-  // keep their original run id.
   async upsertListings(listings: ListingData[], runId: string): Promise<Listing[]> {
     if (!listings.length) return [];
 
@@ -61,10 +58,6 @@ export class RepositoryService {
     return this.configModel.findById(configId).lean<BotConfig | null>();
   }
 
-  /** Read every stored listing. Used once per configuration creation
-   * to count how many listings already match the new filter, for the
-   * welcome email. The matcher is run in-process so the same code
-   * that flags a notification flags a "matching" count. */
   async fetchAllListings(): Promise<Listing[]> {
     return this.listingModel.find({}).lean<Listing[]>();
   }
@@ -91,9 +84,6 @@ export class RepositoryService {
     return { created: !!result.upsertedId };
   }
 
-  /** Audit-only stamp recorded after a successful welcome publish.
-   * Nothing in the platform reads this back; useful only when poking
-   * the collection directly to see whether a given user got welcomed. */
   async markWelcomeSent(configId: string): Promise<void> {
     await this.configModel.updateOne(
       { _id: configId },
@@ -101,11 +91,9 @@ export class RepositoryService {
     );
   }
 
-  // Idempotent upsert keyed on (user_id, bot_id, source_ref). A second
-  // matching configuration of the same user does NOT create a duplicate
-  // row — it grows the existing row's `config_ids` array via $addToSet.
-  // Returns the number of newly created rows (the others were already
-  // present, possibly with a different subset of config_ids).
+  // Idempotent on (user_id, bot_id, source_ref): a second matching
+  // configuration of the same user grows config_ids[] on the existing
+  // row instead of inserting a duplicate.
   async insertNotifications(
     rows: Array<{
       user_id: string;
@@ -143,12 +131,6 @@ export class RepositoryService {
     return result.upsertedCount ?? 0;
   }
 
-  // One-shot self-registration on boot. The platform contract treats
-  // the registry as a published catalogue: once advertised, a service
-  // stays listed. No heartbeat, no `last_seen`, no manifest of internal
-  // scheduling state — those concerns live inside the bot service.
-  // Keyed by `bot_id`, which doubles as the compose / k8s service name
-  // and the URL slug under /modules/<bot_id>/* on the BFF.
   async upsertRegistry(): Promise<void> {
     await this.registryModel.updateOne(
       { bot_id: config.serviceId },

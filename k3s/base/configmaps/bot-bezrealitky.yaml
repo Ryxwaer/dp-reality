@@ -12,10 +12,11 @@ data:
   DISPLAY_NAME: Bezrealitky
   BASE_URL: http://bot-bezrealitky:8000
   SCRAPE_INTERVAL_MINUTES: "10"
-  # Bezrealitky-specific anti-bot knobs (NFR-01-B). The thesis grants
-  # this bot the right to opt into stronger countermeasures than the
-  # other two: per-page throttle, long backoff window on a 429/403
-  # response, and a per-cycle cap on detail-page enrichment fetches.
+  # Anti-bot countermeasures (NFR-01-B): per-page throttle, post-block
+  # backoff, per-cycle detail-fetch cap.
   SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: "2.0"
   BACKOFF_MINUTES_ON_BLOCK: "30"
   MAX_DETAIL_FETCHES_PER_CYCLE: "60"
+  GEO_SEED_MODE: missing
+  # Required by Nominatim's usage policy — keep the contact in there.
+  GEO_USER_AGENT: "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"

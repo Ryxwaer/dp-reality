@@ -1,12 +1,3 @@
-"""Bezrealitky bot service entrypoint.
-
-Boots the FastAPI HTTP server, the APScheduler-driven scrape loop, and
-performs a one-shot self-registration in module_registry. The shape is
-intentionally identical to bot-bazos: a single Mongo client and a
-single RabbitMQ connection shared by the scheduler and the HTTP API,
-so the only differences between the two services are the
-source-specific scraper/matcher/renderer.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +9,7 @@ import motor.motor_asyncio
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from . import api, cycle, repository
+from . import api, cycle, geo, repository
 from .config import settings
 
 logging.basicConfig(
@@ -31,7 +22,11 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongodb_uri)
     db = client.get_default_database()
+
+    await repository.migrate(db)
     await repository.ensure_indexes(db)
+    await geo.ensure_indexes(db)
+    await geo.seed_if_needed(db)
     await repository.upsert_registry(db)
 
     rabbitmq = await aio_pika.connect_robust(settings.rabbitmq_url)

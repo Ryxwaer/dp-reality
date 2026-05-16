@@ -40,15 +40,13 @@ services:
       # The frontend container reaches this via the dp-reality bridge
       # network, so the docker DNS name is enough — no published port.
       BASE_URL: http://bot-bazos:8000
-      GEO_SERVICE_URL: http://geo-cz:8000
       SCRAPE_INTERVAL_MINUTES: 5
       SCRAPE_PAGES: 5
+      GEO_SEED_MODE: missing
     ports:
       - "8001:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
-      geo-cz:
         condition: service_healthy
     networks:
       - dp-reality
@@ -60,36 +58,6 @@ services:
           target: /app/src
         - action: rebuild
           path: ./services/bot-bazos/requirements.txt
-
-  geo-cz:
-    container_name: dp-reality-geo-cz
-    build:
-      context: .
-      dockerfile: services/geo-cz/Dockerfile
-    pull_policy: build
-    image: dp-reality-geo-cz:latest
-    environment:
-      SERVICE_ID: geo-cz
-      MONGODB_URI: ${MONGODB_URI}
-      SEED_MODE: missing
-    ports:
-      - "8010:8000"
-    networks:
-      - dp-reality
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/healthz\")'"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/geo-cz/src
-          target: /app/src
-        - action: rebuild
-          path: ./services/geo-cz/requirements.txt
 
   bot-sreality:
     container_name: dp-reality-bot-sreality
@@ -140,12 +108,13 @@ services:
       DISPLAY_NAME: Bezrealitky
       BASE_URL: http://bot-bezrealitky:8000
       SCRAPE_INTERVAL_MINUTES: 10
-      # Bezrealitky-specific anti-bot knobs (NFR-01-B). Stronger than
-      # the other two bots: per-page throttle, post-block backoff,
-      # detail-fetch cap. See services/bot-bezrealitky/src/config.py.
+      # Anti-bot countermeasures (NFR-01-B): per-page throttle,
+      # post-block backoff, detail-fetch cap.
       SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: 2.0
       BACKOFF_MINUTES_ON_BLOCK: 30
       MAX_DETAIL_FETCHES_PER_CYCLE: 60
+      GEO_SEED_MODE: missing
+      GEO_USER_AGENT: "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
     ports:
       - "8003:8000"
     depends_on:

@@ -1,19 +1,14 @@
 """HTTP surface of the Bezrealitky bot service.
 
-Mirrors the bot-bazos contract endpoint-for-endpoint:
-
-  GET  /healthz               — liveness probe
-  GET  /configure             — self-hosted configuration UI (HTML)
-  GET  /configs/{config_id}   — read-back for edit-mode pre-fill
-  POST /configs/{config_id}   — persist the form's config body, and
-                                fire welcome on first creation
-  POST /parse-url             — bezrealitky.cz URL → partial config
+  GET  /healthz               liveness probe
+  GET  /configure             self-hosted configuration UI
+  GET  /configs/{config_id}   read-back for edit-mode pre-fill
+  POST /configs/{config_id}   persist + fire welcome on creation
+  POST /parse-url             /vyhledat?... URL → partial config
+  GET  /regions/lookup        resolve OSM ids to {name, lat, lon} via geo
 
 The reverse proxy at the BFF (/modules/bot-bezrealitky/*) injects the
 authenticated `user_id` as a query parameter on every forwarded call.
-Lifecycle mutations (pause / resume / delete) are driven by the BFF
-mutating this bot's config collection directly — no HTTP or AMQP
-indirection.
 """
 from __future__ import annotations
 
@@ -28,9 +23,16 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import repository, welcome
+from . import geo, repository, welcome
 from .config import settings
-from .models import BotConfig, PriceType, PropertyType
+from .models import (
+    BotConfig,
+    Condition,
+    Disposition,
+    EstateType,
+    OfferType,
+    Ownership,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,62 +43,19 @@ class CreateBody(BaseModel):
 
 
 class ParseUrlBody(BaseModel):
-    url: str = Field(default="", max_length=2048)
+    url: str = Field(default="", max_length=4096)
 
 
-_ESTATE_SLUG_TO_PROPERTY: dict[str, PropertyType] = {
-    "byt": PropertyType.APARTMENT,
-    "byty": PropertyType.APARTMENT,
-    "dum": PropertyType.HOUSE,
-    "domy": PropertyType.HOUSE,
-    "pozemek": PropertyType.LAND,
-    "pozemky": PropertyType.LAND,
-    "kancelar": PropertyType.COMMERCIAL,
-    "kancelare": PropertyType.COMMERCIAL,
-    "nebytovy-prostor": PropertyType.COMMERCIAL,
-    "nebytove-prostory": PropertyType.COMMERCIAL,
-    "garaz": PropertyType.OTHER,
-    "garaze": PropertyType.OTHER,
-    "rekreacni-objekt": PropertyType.OTHER,
-}
-
-
-# Bezrealitky exposes both `/nabidka-prodej/...` and `/prodej/...`
-# variants depending on entry path; the parser handles either.
-_OFFER_SLUG_TO_PRICE: dict[str, PriceType] = {
-    "prodej": PriceType.SALE,
-    "nabidka-prodej": PriceType.SALE,
-    "pronajem": PriceType.RENT,
-    "nabidka-pronajem": PriceType.RENT,
-}
-
-
-# Bezrealitky exposes the disposition in URL segments and query
-# parameters in two forms: the canonical `2+kk` (matching the listing
-# fields stored by the scraper) and the slug-friendly `2-kk`. We
-# accept either input and map both to the canonical form so the
-# matcher's exact-equality check lines up with the upserted listings.
-_DISPOSITION_NORMALISE = {
-    "1+kk": "1+kk", "1-kk": "1+kk",
-    "1+1": "1+1",
-    "2+kk": "2+kk", "2-kk": "2+kk",
-    "2+1": "2+1",
-    "3+kk": "3+kk", "3-kk": "3+kk",
-    "3+1": "3+1",
-    "4+kk": "4+kk", "4-kk": "4+kk",
-    "4+1": "4+1",
-    "5+kk": "5+kk", "5-kk": "5+kk",
-    "5+1": "5+1",
-    "6+kk": "6+kk", "6-kk": "6+kk",
-    "6+1": "6+1",
-    "garsoniera": "garsoniera",
-    "atypicky": "ostatní",
-    "ostatni": "ostatní",
-}
+def _all_values(qs: dict[str, list[str]], *names: str) -> list[str]:
+    out: list[str] = []
+    for name in names:
+        for v in qs.get(name, []):
+            if v:
+                out.append(v)
+    return out
 
 
 def _first(qs: dict[str, list[str]], *names: str) -> str | None:
-    """Return the first value for any of the candidate query keys."""
     for name in names:
         values = qs.get(name)
         if values and values[0]:
@@ -110,95 +69,115 @@ def _coerce_int(raw: str | None) -> int | None:
     cleaned = "".join(ch for ch in raw if ch.isdigit())
     if not cleaned:
         return None
-    try:
-        n = int(cleaned)
-    except ValueError:
-        return None
+    n = int(cleaned)
     return n if n > 0 else None
 
 
-def parse_bezrealitky_url(raw: str) -> dict[str, Any]:
-    """Translate a bezrealitky.cz filter URL into a partial config.
+def _enum_value(raw: str, enum_cls: type) -> Any:
+    try:
+        return enum_cls(raw)
+    except ValueError:
+        return None
 
-    Accepts both the current `/vypis/nabidka-prodej/...` form and the
-    legacy `/prodej/...` form. Returns either {"ok": True, "parsed":
-    {...}} or {"ok": False, "reason": "..."}.
+
+def _parse_osm_id(raw: str) -> int | None:
+    s = raw.strip().lstrip("Rr")
+    if s.isdigit():
+        return int(s)
+    return None
+
+
+def parse_bezrealitky_url(raw: str) -> dict[str, Any]:
+    """Translate a bezrealitky.cz `/vyhledat?...` URL into a partial config.
+
+    Anything the URL does not carry is omitted; anything malformed
+    (non-numeric `priceTo`, unknown enum values, etc.) is reported back
+    so the user sees the same filter they pasted, never silently
+    altered.
     """
     trimmed = (raw or "").strip()
     if not trimmed:
         return {"ok": False, "reason": "Paste a bezrealitky.cz search URL."}
-    try:
-        parts = urlparse(trimmed)
-    except ValueError:
-        return {"ok": False, "reason": "That doesn\u2019t look like a valid URL."}
-
+    parts = urlparse(trimmed)
     host = (parts.hostname or "").lower()
     if not (host == "bezrealitky.cz" or host.endswith(".bezrealitky.cz")):
         return {"ok": False, "reason": "URL must be on bezrealitky.cz."}
 
-    # Strip the optional `vypis` prefix; everything after that is the
-    # same `<offer>/<estate>[/<dispozice>][/<lokalita>]` grammar.
-    segments = [s for s in parts.path.split("/") if s]
-    if segments and segments[0] == "vypis":
-        segments = segments[1:]
-
+    qs = parse_qs(parts.query, keep_blank_values=False)
     out: dict[str, Any] = {}
-    if segments:
-        price = _OFFER_SLUG_TO_PRICE.get(segments[0])
-        if price is not None:
-            out["offer_type"] = price.value
-    if len(segments) > 1:
-        prop = _ESTATE_SLUG_TO_PROPERTY.get(segments[1])
-        if prop is not None:
-            out["property_type"] = prop.value
 
-    # Disposition can live in a path segment or a query param.
-    if len(segments) > 2:
-        candidate = segments[2].lower()
-        mapped = _DISPOSITION_NORMALISE.get(candidate)
-        if mapped:
-            out["disposition_in"] = [mapped]
+    offer_raw = _first(qs, "offerType")
+    if offer_raw:
+        offer = _enum_value(offer_raw.upper(), OfferType)
+        if offer is None:
+            return {"ok": False, "reason": f"Unknown offerType: {offer_raw}"}
+        out["offer_type"] = offer.value
 
-    if len(segments) > 3:
-        out["city_contains"] = segments[3].replace("-", " ")
+    estate_raw = _first(qs, "estateType")
+    if estate_raw:
+        estate = _enum_value(estate_raw.upper(), EstateType)
+        if estate is None:
+            return {"ok": False, "reason": f"Unknown estateType: {estate_raw}"}
+        out["estate_type"] = estate.value
 
-    qs = parse_qs(parts.query)
+    dispositions: list[str] = []
+    for raw_d in _all_values(qs, "disposition"):
+        d = _enum_value(raw_d.upper(), Disposition)
+        if d is None:
+            return {"ok": False, "reason": f"Unknown disposition: {raw_d}"}
+        dispositions.append(d.value)
+    if dispositions:
+        out["disposition_in"] = list(dict.fromkeys(dispositions))
 
-    price_min = _coerce_int(_first(qs, "cena-od", "cena[od]", "priceFrom", "priceMin"))
-    price_max = _coerce_int(_first(qs, "cena-do", "cena[do]", "priceTo", "priceMax"))
+    ownerships: list[str] = []
+    for raw_o in _all_values(qs, "ownership"):
+        o = _enum_value(raw_o.upper(), Ownership)
+        if o is None:
+            return {"ok": False, "reason": f"Unknown ownership: {raw_o}"}
+        ownerships.append(o.value)
+    if ownerships:
+        out["ownership_in"] = list(dict.fromkeys(ownerships))
+
+    conditions: list[str] = []
+    for raw_c in _all_values(qs, "condition"):
+        c = _enum_value(raw_c.upper(), Condition)
+        if c is None:
+            return {"ok": False, "reason": f"Unknown condition: {raw_c}"}
+        conditions.append(c.value)
+    if conditions:
+        out["condition_in"] = list(dict.fromkeys(conditions))
+
+    price_min = _coerce_int(_first(qs, "priceFrom"))
+    price_max = _coerce_int(_first(qs, "priceTo"))
     if price_min is not None:
         out["price_min"] = price_min
     if price_max is not None:
         out["price_max"] = price_max
 
-    surface_min = _coerce_int(
-        _first(qs, "plocha-od", "surfaceFrom", "surfaceMin")
-    )
-    surface_max = _coerce_int(
-        _first(qs, "plocha-do", "surfaceTo", "surfaceMax")
-    )
+    surface_min = _coerce_int(_first(qs, "surfaceFrom"))
+    surface_max = _coerce_int(_first(qs, "surfaceTo"))
     if surface_min is not None:
         out["surface_min"] = surface_min
     if surface_max is not None:
         out["surface_max"] = surface_max
 
-    dispo_raw = _first(qs, "dispozice", "disposition")
-    if dispo_raw:
-        mapped = [
-            _DISPOSITION_NORMALISE.get(d.strip().lower())
-            for d in dispo_raw.split(",")
-        ]
-        mapped = [m for m in mapped if m]
-        if mapped:
-            out["disposition_in"] = list(dict.fromkeys(mapped))
+    region_ids: list[int] = []
+    for raw_r in _all_values(qs, "regionOsmIds", "regionOsmId"):
+        osm_id = _parse_osm_id(raw_r)
+        if osm_id is None:
+            return {"ok": False, "reason": f"Unrecognised regionOsmIds value: {raw_r}"}
+        region_ids.append(osm_id)
+    if region_ids:
+        out["region_osm_ids"] = list(dict.fromkeys(region_ids))
 
-    locality = _first(qs, "lokalita", "region", "city")
-    if locality and "city_contains" not in out:
-        out["city_contains"] = locality.replace("-", " ")
+    polygon_buffer = _coerce_int(_first(qs, "polygonBuffer"))
+    if polygon_buffer is not None:
+        km = max(1, round(polygon_buffer / 1000))
+        out["radius_km"] = km
 
-    keywords = _first(qs, "hledat", "query", "q")
-    if keywords:
-        out["title_keywords"] = keywords
+    osm_value = _first(qs, "osm_value")
+    if osm_value:
+        out["location_label"] = osm_value
 
     if not out:
         return {"ok": False, "reason": "Could not extract any filters from this URL."}
@@ -206,9 +185,19 @@ def parse_bezrealitky_url(raw: str) -> dict[str, Any]:
 
 
 def _state(request: Request) -> tuple[Any, Any]:
-    db = request.app.state.db
-    rabbitmq = request.app.state.rabbitmq
-    return db, rabbitmq
+    return request.app.state.db, request.app.state.rabbitmq
+
+
+async def _resolve_region_osm_ids(
+    db: motor.motor_asyncio.AsyncIOMotorDatabase, osm_ids: list[int]
+) -> None:
+    """Make sure every region the config references is in `bezrealitky_geo`.
+
+    Raises `LookupError` if any id cannot be resolved upstream — surfaced
+    to the user as an HTTP 400.
+    """
+    for osm_id in osm_ids:
+        await geo.resolve_or_fetch(db, osm_id)
 
 
 def build_router() -> APIRouter:
@@ -228,6 +217,32 @@ def build_router() -> APIRouter:
     @router.post("/parse-url")
     async def parse_url(body: ParseUrlBody) -> JSONResponse:
         return JSONResponse(parse_bezrealitky_url(body.url))
+
+    @router.get("/regions/lookup")
+    async def regions_lookup(
+        request: Request,
+        osm_ids: str = Query(..., min_length=1, max_length=512),
+    ) -> JSONResponse:
+        db, _ = _state(request)
+        ids: list[int] = []
+        for part in osm_ids.split(","):
+            osm_id = _parse_osm_id(part)
+            if osm_id is None:
+                raise HTTPException(status_code=400, detail=f"bad osm id: {part!r}")
+            ids.append(osm_id)
+        out: list[dict[str, Any]] = []
+        for osm_id in ids:
+            try:
+                rec = await geo.resolve_or_fetch(db, osm_id)
+            except LookupError as err:
+                raise HTTPException(status_code=404, detail=str(err)) from err
+            out.append({
+                "osm_id": rec["osm_id"],
+                "name": rec.get("name"),
+                "lat": rec.get("lat"),
+                "lon": rec.get("lon"),
+            })
+        return JSONResponse({"results": out})
 
     @router.get("/configs/{config_id}")
     async def get_config(
@@ -256,6 +271,13 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=err.errors()) from err
 
         db, rabbitmq = _state(request)
+
+        if cfg.region_osm_ids:
+            try:
+                await _resolve_region_osm_ids(db, cfg.region_osm_ids)
+            except LookupError as err:
+                raise HTTPException(status_code=400, detail=str(err)) from err
+
         existing = await repository.fetch_config(db, config_id)
         if existing and str(existing.get("user_id")) != user_id:
             raise HTTPException(status_code=404, detail="config not found")
@@ -267,19 +289,14 @@ def build_router() -> APIRouter:
             config=cfg.model_dump(mode="json"),
         )
         if created:
-            try:
-                await welcome.emit_welcome(
-                    db, rabbitmq,
-                    user_id=user_id,
-                    config_id=config_id,
-                    bot_name=body.bot_name,
-                    cfg=cfg,
-                )
-                await repository.mark_welcome_sent(db, config_id)
-            except Exception:
-                logger.exception(
-                    "welcome publish failed for config %s (continuing)", config_id,
-                )
+            await welcome.emit_welcome(
+                db, rabbitmq,
+                user_id=user_id,
+                config_id=config_id,
+                bot_name=body.bot_name,
+                cfg=cfg,
+            )
+            await repository.mark_welcome_sent(db, config_id)
         return JSONResponse(
             {"ok": True, "created": created, "config_id": config_id},
             status_code=201 if created else 200,
@@ -291,8 +308,9 @@ def build_router() -> APIRouter:
 def _serialize_config(doc: dict[str, Any]) -> dict[str, Any]:
     out = dict(doc)
     out["config_id"] = out.pop("_id")
-    if "created_at" in out and hasattr(out["created_at"], "isoformat"):
-        out["created_at"] = out["created_at"].isoformat()
+    for key, value in list(out.items()):
+        if hasattr(value, "isoformat"):
+            out[key] = value.isoformat()
     return out
 
 

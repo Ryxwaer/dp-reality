@@ -2,21 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type { SrealityBotConfig } from './bot-config.schema.js';
 import type { Listing } from './listing.schema.js';
 
-// Treat both `undefined` and `null` as "filter not set". The Mongoose
-// schema declares fields as optional (`?:`), but Mongoose coerces
-// missing keys to `null` on read, and the URL parser also writes `null`
-// when a query parameter wasn't present. Without this, `null !==
-// undefined` would let the comparison block run and reject every
-// listing because `listing.field !== null` is always true for real data.
+// Mongoose returns missing optional keys as `null`, while in-process
+// callers may pass `undefined`. Treat both as "filter not configured".
 function isUnset<T>(v: T | null | undefined): v is null | undefined {
   return v === undefined || v === null;
 }
 
 const EARTH_RADIUS_KM = 6371;
 
-// Great-circle distance (Haversine). Inputs are decimal degrees; both
-// listings.gps and config.center store [lon, lat] (GeoJSON order), so
-// callers must destructure accordingly before invoking.
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -27,8 +20,6 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-// Per-user matcher: native operations on Sreality fields. Owned entirely
-// by this bot service; the dialect never leaves this codebase.
 @Injectable()
 export class MatcherService {
   matches(cfg: SrealityBotConfig, listing: Listing): boolean {
@@ -53,17 +44,9 @@ export class MatcherService {
         return false;
       }
     }
-    if (cfg.city_contains) {
-      const haystack = (listing.city ?? '').toLowerCase();
-      if (!haystack.includes(cfg.city_contains.toLowerCase())) {
-        return false;
-      }
-    }
-    // Geo radius filter. Fail-closed on missing GPS: if the listing
-    // has no coordinates we cannot prove it falls inside the circle,
-    // so we refuse to notify. Sreality returns ~5–10 % of listings
-    // without usable GPS; users opt in to losing those when they pick
-    // a region with a radius.
+    // Listings without GPS are dropped when a radius is configured: we
+    // cannot prove they fall inside the circle, and notifying on a
+    // location we can't place would be a worse defect than missing them.
     if (cfg.center && !isUnset(cfg.radius_km) && cfg.radius_km > 0) {
       if (!listing.gps || !Array.isArray(listing.gps.coordinates)) {
         return false;
@@ -79,16 +62,6 @@ export class MatcherService {
       if (haversineKm(latL, lonL, latC, lonC) > cfg.radius_km) {
         return false;
       }
-    }
-    if (cfg.title_keywords && cfg.title_keywords.length > 0) {
-      const haystack = (listing.title ?? '').toLowerCase();
-      const ok = cfg.title_keywords.every((k) => haystack.includes(k.toLowerCase()));
-      if (!ok) return false;
-    }
-    if (cfg.labels_any && cfg.labels_any.length > 0) {
-      const labels = new Set(listing.labels ?? []);
-      const ok = cfg.labels_any.some((l) => labels.has(l));
-      if (!ok) return false;
     }
     return true;
   }

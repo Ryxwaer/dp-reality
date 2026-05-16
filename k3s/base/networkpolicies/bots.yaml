@@ -30,10 +30,6 @@ spec:
         - podSelector: { matchLabels: { app.kubernetes.io/name: mongodb } }
       ports:
         - { protocol: TCP, port: 27017 }
-    - to:
-        - podSelector: { matchLabels: { app.kubernetes.io/component: geo } }
-      ports:
-        - { protocol: TCP, port: 8000 }
     # External portal scraping. The thesis (§3.7.1) does not pin a
     # CIDR; opening 443 to the world matches the existing host-level
     # firewall posture. If a bot ever needs a portal-specific allow

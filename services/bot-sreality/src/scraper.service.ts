@@ -54,9 +54,6 @@ function buildUrl(
   priceType: 'sale' | 'rent',
   propertyType: 'apartment' | 'house',
 ): string {
-  const locality = estate.seo?.locality ?? '';
-  if (!locality || !estate.hash_id) return 'https://www.sreality.cz/';
-
   const saleRent = priceType === 'rent' ? 'pronajem' : 'prodej';
   const propSlug = propertyType === 'apartment' ? 'byt' : 'dum';
   const subCb = estate.seo?.category_sub_cb;
@@ -64,8 +61,7 @@ function buildUrl(
   const dispSlug =
     (subCb !== undefined && table[subCb]) ||
     (propertyType === 'apartment' ? 'atypicky' : 'rodinny');
-
-  return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${locality}/${estate.hash_id}`;
+  return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${estate.seo.locality}/${estate.hash_id}`;
 }
 
 function parseEstate(
@@ -75,6 +71,25 @@ function parseEstate(
 ): ListingData | null {
   const sourceId = String(estate.hash_id);
   if (!sourceId || sourceId === '0') return null;
+  if (!estate.seo?.locality) return null;
+
+  // Sreality returns GPS for every active estate. A missing or zero
+  // coordinate pair therefore signals a malformed payload, not a
+  // routine miss — fail loud instead of silently dropping the listing.
+  if (
+    !estate.gps ||
+    !Number.isFinite(estate.gps.lat) ||
+    !Number.isFinite(estate.gps.lon) ||
+    (estate.gps.lat === 0 && estate.gps.lon === 0)
+  ) {
+    throw new Error(
+      `estate ${sourceId} has no usable GPS (lat=${estate.gps?.lat}, lon=${estate.gps?.lon})`,
+    );
+  }
+  const gps = {
+    type: 'Point' as const,
+    coordinates: [estate.gps.lon, estate.gps.lat] as [number, number],
+  };
 
   const disposition =
     estate.name.match(/\b(\d+\+(?:kk|\d+))\b/i)?.[1] ?? undefined;
@@ -87,14 +102,6 @@ function parseEstate(
   const district = cityWithDistrict[1]?.trim() || undefined;
 
   const labels = estate.labelsAll?.[0] ?? [];
-
-  const gps =
-    estate.gps && (estate.gps.lat !== 0 || estate.gps.lon !== 0)
-      ? {
-          type: 'Point' as const,
-          coordinates: [estate.gps.lon, estate.gps.lat] as [number, number],
-        }
-      : undefined;
 
   const key = buildDedupeKey(estate, priceType, propertyType, sourceId);
   return {
@@ -118,10 +125,10 @@ function parseEstate(
   };
 }
 
-// Stable composite key — see Listing schema for rationale. `seo.locality`
-// is the URL slug Sreality assigns (street + district), which stays
-// constant across republishes. Including `price` means a price change
-// deliberately produces a new key → new doc → new notification.
+// Stable composite key. `seo.locality` is the URL slug Sreality assigns
+// (street + district), constant across republishes. Including `price`
+// means a price change deliberately produces a new key → new doc → new
+// notification.
 function buildDedupeKey(
   estate: SrealityEstate,
   priceType: 'sale' | 'rent',
@@ -149,7 +156,6 @@ export class ScraperService implements OnModuleInit {
     void this.loop();
   }
 
-  /** Run a single scrape cycle, deduplicated against any in-flight one. */
   async runOnce(): Promise<void> {
     if (this.inFlight) {
       await this.inFlight;
@@ -218,24 +224,17 @@ export class ScraperService implements OnModuleInit {
     catMain: number,
     catType: number,
   ): Promise<SrealityEstate[]> {
-    try {
-      const { data } = await axios.get<{
-        _embedded?: { estates?: SrealityEstate[] };
-      }>('https://www.sreality.cz/api/cs/v2/estates', {
-        params: {
-          category_main_cb: catMain,
-          category_type_cb: catType,
-          per_page: 60,
-        },
-        headers: HEADERS,
-        timeout: 30_000,
-      });
-      return data?._embedded?.estates ?? [];
-    } catch (err) {
-      this.logger.warn(
-        `Failed to fetch cat=${catMain}/${catType}, skipping: ${(err as Error).message}`,
-      );
-      return [];
-    }
+    const { data } = await axios.get<{
+      _embedded?: { estates?: SrealityEstate[] };
+    }>('https://www.sreality.cz/api/cs/v2/estates', {
+      params: {
+        category_main_cb: catMain,
+        category_type_cb: catType,
+        per_page: 60,
+      },
+      headers: HEADERS,
+      timeout: 30_000,
+    });
+    return data?._embedded?.estates ?? [];
   }
 }

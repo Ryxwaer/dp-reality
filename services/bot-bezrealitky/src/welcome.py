@@ -1,15 +1,9 @@
 """Welcome message composition for newly-created Bezrealitky bots.
 
-When the iframe POSTs a brand-new configuration to /configs/<id>, the
-bot service publishes exactly one `notify.bot.welcome` event from
-inside that handler. Same shape as bot-bazos: one-shot
-event-carried-state, the email-notifier sends a single email on
-receipt with no further lookups.
-
-The card carries a short stats summary plus a human-readable echo of
-the filters — no real listings, since the user has just been on the
-portal selecting filters and a "here are listings you just saw"
-digest is noise.
+Published exactly once per new configuration as `notify.bot.welcome`.
+The card embeds an English summary of the chosen filters plus the
+count of currently-stored listings that satisfy them, so the email
+notifier never needs to look anything up.
 """
 from __future__ import annotations
 
@@ -20,44 +14,69 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
-from . import matcher, repository
+from . import geo, matcher, repository
 from .config import settings
-from .models import BotConfig, Listing, PriceType, PropertyType
+from .models import (
+    BotConfig,
+    Condition,
+    EstateType,
+    Listing,
+    OfferType,
+    Ownership,
+    disposition_label,
+)
 
 logger = logging.getLogger(__name__)
 
 
-_OFFER_LABELS = {
-    PriceType.SALE: "for sale",
-    PriceType.RENT: "for rent",
+_OFFER_LABELS: dict[OfferType, str] = {
+    OfferType.PRODEJ: "for sale",
+    OfferType.PRONAJEM: "for rent",
 }
 
-_PROPERTY_LABELS = {
-    PropertyType.APARTMENT: "apartments",
-    PropertyType.HOUSE: "houses",
-    PropertyType.LAND: "land",
-    PropertyType.COMMERCIAL: "commercial properties",
-    PropertyType.OTHER: "properties",
+_ESTATE_LABELS: dict[EstateType, str] = {
+    EstateType.BYT: "apartments",
+    EstateType.DUM: "houses",
+    EstateType.POZEMEK: "land",
+    EstateType.GARAZ: "garages",
+    EstateType.KANCELAR: "offices",
+    EstateType.NEBYTOVY_PROSTOR: "non-residential properties",
+    EstateType.REKREACNI_OBJEKT: "leisure properties",
+}
+
+_OWNERSHIP_LABELS: dict[Ownership, str] = {
+    Ownership.OSOBNI: "personal ownership",
+    Ownership.DRUZSTEVNI: "cooperative",
+    Ownership.OBECNI: "municipal",
+    Ownership.OSTATNI: "other ownership",
+}
+
+_CONDITION_LABELS: dict[Condition, str] = {
+    Condition.VERY_GOOD: "very good",
+    Condition.GOOD: "good",
+    Condition.BAD: "bad",
+    Condition.CONSTRUCTION: "under construction",
+    Condition.PROJECT: "project",
+    Condition.NEW: "new",
+    Condition.DEMOLITION: "demolition",
+    Condition.BEFORE_RECONSTRUCTION: "before reconstruction",
+    Condition.AFTER_RECONSTRUCTION: "after reconstruction",
+    Condition.AFTER_PARTIAL_RECONSTRUCTION: "after partial reconstruction",
+    Condition.IN_RECONSTRUCTION: "in reconstruction",
 }
 
 
-def _format_filter_summary(cfg: BotConfig) -> str:
-    """Compact left-to-right summary: type → property → price → location → keywords."""
+def _format_filter_summary(
+    cfg: BotConfig, region_names: list[str]
+) -> str:
+    estate_label = _ESTATE_LABELS.get(cfg.estate_type) if cfg.estate_type else None
+    head = (estate_label or "Listings").capitalize()
     parts: list[str] = []
-    property_label = (
-        _PROPERTY_LABELS.get(cfg.property_type, "Listings")
-        if cfg.property_type
-        else "Listings"
-    )
     offer_label = _OFFER_LABELS.get(cfg.offer_type, "") if cfg.offer_type else ""
-    head = property_label[0].upper() + property_label[1:]
-    if offer_label:
-        parts.append(f"{head} {offer_label}")
-    else:
-        parts.append(head)
+    parts.append(f"{head} {offer_label}".strip())
 
     if cfg.disposition_in:
-        parts.append(", ".join(cfg.disposition_in))
+        parts.append(", ".join(disposition_label(d) or d.value for d in cfg.disposition_in))
 
     if cfg.price_min is not None and cfg.price_max is not None:
         parts.append(f"{cfg.price_min:,}–{cfg.price_max:,} CZK".replace(",", " "))
@@ -73,20 +92,24 @@ def _format_filter_summary(cfg: BotConfig) -> str:
     elif cfg.surface_max is not None:
         parts.append(f"up to {cfg.surface_max} m\u00b2")
 
-    if cfg.city_contains:
-        parts.append(f"in {cfg.city_contains}")
-    if cfg.title_keywords:
-        parts.append("matching " + ", ".join(f'"{k}"' for k in cfg.title_keywords))
-    return " · ".join(parts)
+    if cfg.ownership_in:
+        parts.append(", ".join(_OWNERSHIP_LABELS.get(o, o.value) for o in cfg.ownership_in))
+    if cfg.condition_in:
+        parts.append(", ".join(_CONDITION_LABELS.get(c, c.value) for c in cfg.condition_in))
+
+    if region_names and cfg.radius_km is not None:
+        parts.append(f"within {cfg.radius_km} km of {' / '.join(region_names)}")
+    elif region_names:
+        parts.append("in " + " / ".join(region_names))
+
+    return " · ".join(p for p in parts if p)
 
 
-async def _count_matching(db: AsyncIOMotorDatabase, cfg: BotConfig) -> int:
-    """Count currently-stored listings that satisfy the matcher.
-
-    Runs the matcher in-process rather than translating it to a Mongo
-    query: keeps the matcher single-sourced. Acceptable cost — a
-    one-shot per bot creation against a bounded collection.
-    """
+async def _count_matching(
+    db: AsyncIOMotorDatabase,
+    cfg: BotConfig,
+    region_centers: list[tuple[float, float]],
+) -> int:
     cursor = db[repository.LISTINGS_COLLECTION].find({})
     docs = await cursor.to_list(length=None)
     count = 0
@@ -95,7 +118,7 @@ async def _count_matching(db: AsyncIOMotorDatabase, cfg: BotConfig) -> int:
             listing = Listing.model_validate(doc)
         except ValidationError:
             continue
-        if matcher.matches(cfg, listing):
+        if matcher.matches(cfg, listing, region_centers=region_centers):
             count += 1
     return count
 
@@ -109,9 +132,10 @@ def render_welcome_card(
     bot_name: str,
     matching_count: int,
     cfg: BotConfig,
+    region_names: list[str],
 ) -> str:
     name = _esc(bot_name) or "Untitled bot"
-    summary = _esc(_format_filter_summary(cfg))
+    summary = _esc(_format_filter_summary(cfg, region_names))
     interval = settings.scrape_interval_minutes
     count_line = (
         f"We're already tracking <strong>{matching_count:,}</strong> "
@@ -153,6 +177,7 @@ def build_welcome_payload(
     bot_name: str,
     matching_count: int,
     cfg: BotConfig,
+    region_names: list[str],
 ) -> dict[str, Any]:
     name = bot_name or "Untitled bot"
     return {
@@ -164,6 +189,7 @@ def build_welcome_payload(
             bot_name=name,
             matching_count=matching_count,
             cfg=cfg,
+            region_names=region_names,
         ),
     }
 
@@ -177,34 +203,30 @@ async def emit_welcome(
     bot_name: str,
     cfg: BotConfig,
 ) -> None:
-    """End-to-end: count matches, render, publish.
-
-    Errors are logged but never propagated — the welcome email is a
-    courtesy and must not block the user-visible bot creation flow.
-    """
+    """End-to-end: count matches, render, publish."""
     from . import publisher
 
-    try:
-        matching_count = await _count_matching(db, cfg)
-    except Exception:
-        logger.exception("welcome: matching count failed for config %s", config_id)
-        matching_count = 0
+    region_records = await geo.find_many(db, cfg.region_osm_ids)
+    region_centers: list[tuple[float, float]] = []
+    region_names: list[str] = []
+    for osm_id in cfg.region_osm_ids:
+        rec = region_records.get(int(osm_id))
+        if rec and rec.get("lat") is not None and rec.get("lon") is not None:
+            region_centers.append((rec["lat"], rec["lon"]))
+            if rec.get("name"):
+                region_names.append(rec["name"])
 
+    matching_count = await _count_matching(db, cfg, region_centers)
     payload = build_welcome_payload(
         user_id=user_id,
         config_id=config_id,
         bot_name=bot_name,
         matching_count=matching_count,
         cfg=cfg,
+        region_names=region_names,
     )
-
-    try:
-        await publisher.publish_bot_welcome(rabbitmq, payload)
-        logger.info(
-            "welcome: published for config %s (user %s, %d matching listings)",
-            config_id,
-            user_id,
-            matching_count,
-        )
-    except Exception:
-        logger.exception("welcome: publish failed for config %s", config_id)
+    await publisher.publish_bot_welcome(rabbitmq, payload)
+    logger.info(
+        "welcome: published for config %s (user %s, %d matching listings)",
+        config_id, user_id, matching_count,
+    )

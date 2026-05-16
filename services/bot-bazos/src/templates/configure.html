@@ -214,9 +214,9 @@
         <span class="help-inline">Requires PSČ. Empty&nbsp;=&nbsp;exact-PSČ match.</span>
       </div>
       <div>
-        <label for="kw">Title must contain</label>
+        <label for="kw">Must contain (title or description)</label>
         <input id="kw" class="input" placeholder="e.g. 1+kk, balkon" />
-        <span class="help-inline">Comma-separated. All keywords must appear in the title (case-insensitive).</span>
+        <span class="help-inline">Comma-separated. All keywords must appear somewhere in the listing title or description (case-insensitive).</span>
       </div>
     </div>
 
@@ -297,7 +297,7 @@
       if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
       if (typeof p.psc === 'string') els.psc.value = p.psc;
       if (typeof p.radius_km === 'number') els.radius.value = String(p.radius_km);
-      if (typeof p.title_keywords === 'string') els.kw.value = p.title_keywords;
+      if (typeof p.keywords === 'string') els.kw.value = p.keywords;
     }
 
     async function loadExisting() {
@@ -325,7 +325,7 @@
       if (c.price_max != null) els.pmax.value = String(c.price_max);
       if (c.psc) els.psc.value = c.psc;
       if (c.radius_km != null) els.radius.value = String(c.radius_km);
-      if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
+      if (Array.isArray(c.keywords)) els.kw.value = c.keywords.join(', ');
     }
 
     function showImportMsg(kind, text) {
@@ -371,7 +371,8 @@
       if (e.key === 'Enter') { e.preventDefault(); els.importBtn.click(); }
     });
 
-    // City autocomplete: resolves typed city name → PSČ via geo-cz.
+    // City autocomplete: resolves typed city name → PSČ in-process
+    // against the bot's private bazos_geo collection.
     // Selecting a hit fills both `city` (display) and `psc` (canonical
     // value used by the matcher); the user can still override psc by
     // hand.
@@ -457,7 +458,7 @@
         price_max: intOrNull(els.pmax.value),
         psc: els.psc.value.trim() || null,
         radius_km: intOrNull(els.radius.value),
-        title_keywords: csv(els.kw.value)
+        keywords: csv(els.kw.value)
       };
     }
 

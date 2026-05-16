@@ -3,30 +3,20 @@ import type { HydratedDocument } from 'mongoose';
 
 export type ListingDocument = HydratedDocument<Listing>;
 
-// GeoJSON Point in [lon, lat] order for Mongo 2dsphere / $centerSphere.
+// GeoJSON Point in [lon, lat] order, indexed as 2dsphere for $geoWithin.
 @Schema({ _id: false })
 class GeoPoint {
   @Prop({ required: true, enum: ['Point'], default: 'Point' }) type!: 'Point';
   @Prop({ type: [Number], required: true }) coordinates!: [number, number];
 }
 
-// listings_sreality contains the analytics base schema fields required
-// by the platform contract (title, property_type, disposition, price,
-// price_type, city, district, source_url, first_seen, last_seen, run_id)
-// plus a Sreality-specific tail (key, source_id, locality, gps,
-// category_*_cb, labels). The tail is opaque to other services.
 @Schema({ collection: 'listings_sreality', timestamps: false, versionKey: false })
 export class Listing {
-  // Content-addressed _id: sha256 of `key`. Stable across republishes,
-  // changes only when the key changes (e.g. price moves). Provided
-  // explicitly on every upsert.
+  // sha256(key) — stable across republishes; changes only when `key` does.
   @Prop({ required: true, type: String }) _id!: string;
-
-  // Stable composite dedupe key. See parseEstate() in scraper.service.ts
-  // for the exact composition.
   @Prop({ required: true }) key!: string;
 
-  // ---- Analytics base schema ----
+  // Analytics base schema
   @Prop({ required: true }) title!: string;
   @Prop({ required: true }) property_type!: 'apartment' | 'house';
   @Prop() disposition?: string;
@@ -39,7 +29,7 @@ export class Listing {
   @Prop() last_seen?: Date;
   @Prop() run_id?: string;
 
-  // ---- Sreality-specific tail ----
+  // Sreality-specific tail
   @Prop({ required: true }) source_id!: string;
   @Prop() locality?: string;
   @Prop({ type: GeoPoint }) gps?: GeoPoint;

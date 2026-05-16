@@ -53,7 +53,9 @@ class BotConfig(BaseModel):
     price_max: Optional[int] = None
     psc: Optional[str] = None
     radius_km: Optional[int] = Field(default=None, ge=1, le=200)
-    title_keywords: list[str] = Field(default_factory=list)
+    # All keywords must appear (case-insensitive) somewhere in
+    # `title + description` of a scraped listing.
+    keywords: list[str] = Field(default_factory=list)
 
     @field_validator("psc")
     @classmethod

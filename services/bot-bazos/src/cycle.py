@@ -7,13 +7,11 @@ from collections import defaultdict
 from typing import Iterable
 
 import aio_pika
-import httpx
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
-from . import matcher, notifications, publisher, repository, scraper
+from . import geo, matcher, notifications, publisher, repository, scraper
 from .config import settings
-from .geo_client import geo_client
 from .models import BotConfig, Listing
 
 logger = logging.getLogger(__name__)
@@ -52,7 +50,9 @@ async def run_cycle(
             os._exit(1)
 
 
-async def _resolve_allowed_pscs(cfg: BotConfig) -> set[str] | None:
+async def _resolve_allowed_pscs(
+    db: AsyncIOMotorDatabase, cfg: BotConfig
+) -> set[str] | None:
     """Pre-compute the set of PSČs that pass the (psc, radius_km) gate.
 
     Returns None when the config doesn't enable radius filtering, in
@@ -60,7 +60,7 @@ async def _resolve_allowed_pscs(cfg: BotConfig) -> set[str] | None:
     """
     if not cfg.psc or not cfg.radius_km:
         return None
-    return await geo_client.in_radius_by_psc(cfg.psc, cfg.radius_km)
+    return await geo.in_radius_by_psc(db, cfg.psc, cfg.radius_km)
 
 
 async def _match_and_notify(
@@ -83,10 +83,12 @@ async def _match_and_notify(
             logger.warning("skip invalid config %s: %s", cfg_doc.get("_id"), err)
             continue
         try:
-            allowed_pscs = await _resolve_allowed_pscs(cfg)
-        except httpx.HTTPError as err:
+            allowed_pscs = await _resolve_allowed_pscs(db, cfg)
+        except LookupError as err:
+            # The user gave us a PSČ that isn't in the GeoNames dump.
+            # Skip just this one config; other users keep being processed.
             logger.error(
-                "geo-cz lookup failed for config %s (psc=%s, km=%s): %s — skipping this cycle",
+                "geo lookup failed for config %s (psc=%s, km=%s): %s — skipping",
                 cfg_doc.get("_id"), cfg.psc, cfg.radius_km, err,
             )
             continue

@@ -1,13 +1,3 @@
-"""Configuration for the Bezrealitky bot service.
-
-Mirrors bot-bazos with two Bezrealitky-specific knobs:
-  - `scrape_throttle_seconds_between_pages` — anti-bot enforcement on
-    bezrealitky.cz is stronger than on Bazos / Sreality (thesis §4.3.2),
-    so the bot sleeps between every list-endpoint fetch.
-  - `header_profiles` — a small pool of (User-Agent, Accept-Language)
-    pairs rotated round-robin per outgoing HTTP request. Keeps the
-    request stream from looking like a single fixed client.
-"""
 from __future__ import annotations
 
 from pydantic_settings import BaseSettings
@@ -43,38 +33,30 @@ _DEFAULT_HEADER_PROFILES: list[dict[str, str]] = [
 class Settings(BaseSettings):
     mongodb_uri: str = "mongodb://localhost:27017/dp-reality"
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+
     scrape_interval_minutes: int = 10
-    # Number of pages to walk per (offer_type, estate_type) tuple per
-    # cycle. The list endpoint returns 30 items per page; 3 pages × 6
-    # category combinations × 30 items = 540 listings inspected per
-    # cycle, which comfortably fits inside the throttle budget below.
     scrape_pages: int = 3
     scrape_page_size: int = 30
 
-    # Anti-bot countermeasures (NFR-01-B). The thesis grants this bot
-    # the right to opt into stronger measures than the other two; see
-    # `scraper.py` for how these are applied.
+    # Anti-bot countermeasures (NFR-01-B). The bot sleeps between every
+    # list-endpoint fetch, and on a 429/403 the cycle layer skips ahead.
     scrape_throttle_seconds_between_pages: float = 2.0
-    # On observed 429 / 403 the cycle is aborted and the next cycle is
-    # delayed by this many minutes (with a fresh header profile).
     backoff_minutes_on_block: int = 30
-    # Maximum number of detail-page fetches per cycle. Detail fetches
-    # only happen for newly inserted listings (post-upsert), so this
-    # caps the burst — when more new listings appear than the cap, the
-    # extras stay summary-only and get their detail enrichment on the
-    # next cycle.
     max_detail_fetches_per_cycle: int = 60
 
-    # Self-registration in module_registry. `service_id` becomes the
-    # `bot_id` field of the registry row and is also the path slug the
-    # BFF reverse-proxies (/modules/<service_id>/*). It MUST match the
-    # compose service name / k8s Service name so that `base_url` below
-    # resolves to the same pod from any peer in the cluster.
+    # `missing` (default) seeds `bezrealitky_geo` only on first boot;
+    # `always` re-upserts every boot; `never` skips the seeder.
+    geo_seed_mode: str = "missing"
+    # User-Agent presented to bezrealitky's `czechRegions` and to
+    # Nominatim. Nominatim's usage policy requires a real contact in
+    # this string; override via env in production.
+    geo_user_agent: str = "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
+
     service_id: str = "bot-bezrealitky"
     display_name: str = "Bezrealitky"
     description: str = (
         "P2P Czech real-estate portal. Direct owner-buyer/tenant. "
-        "Hybrid JSON+HTML scraper."
+        "GraphQL scraper."
     )
     category: str = "real-estate"
     base_url: str = "http://bot-bezrealitky:8000"

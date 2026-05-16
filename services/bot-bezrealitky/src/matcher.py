@@ -1,43 +1,58 @@
-"""Per-user matching for Bezrealitky.
-
-The matcher uses native Python operations on the fields written into
-`listings_bezrealitky` by this bot service. It is intentionally not a
-portable DSL: the platform's whole point is that the matcher's shape
-is owned by the bot service and never leaves it (§3.3.3).
-"""
 from __future__ import annotations
 
 from typing import Any
 
+from .geo import haversine_km
 from .models import BotConfig, Listing
 
 
-def _matches_keyword(text: str | None, keywords: list[str]) -> bool:
-    if not keywords:
-        return True
-    if not text:
+def _in_radius(
+    listing: Listing,
+    radius_km: int,
+    region_centers: list[tuple[float, float]],
+) -> bool:
+    if listing.gps is None:
         return False
-    haystack = text.lower()
-    return all(k.lower() in haystack for k in keywords)
+    lon, lat = listing.gps.coordinates[0], listing.gps.coordinates[1]
+    for c_lat, c_lon in region_centers:
+        if haversine_km(lat, lon, c_lat, c_lon) <= radius_km:
+            return True
+    return False
 
 
-def matches(config: BotConfig, listing: Listing) -> bool:
+def matches(
+    config: BotConfig,
+    listing: Listing,
+    *,
+    region_centers: list[tuple[float, float]] | None = None,
+) -> bool:
+    """Decide whether a listing should produce a notification for this config.
+
+    `region_centers` is the precomputed list of (lat, lon) anchors for
+    `config.region_osm_ids`, resolved by the cycle once per config.
+    Fail-closed on the radius filter: if the user asked for a radius and
+    the listing has no GPS, we cannot prove inclusion and refuse to notify.
+    """
     if config.offer_type and listing.offer_type != config.offer_type:
         return False
-    if config.property_type and listing.property_type != config.property_type:
+    if config.estate_type and listing.estate_type != config.estate_type:
         return False
+    if config.disposition_in:
+        if listing.disposition_native is None:
+            return False
+        if listing.disposition_native not in config.disposition_in:
+            return False
+    if config.ownership_in:
+        if listing.ownership is None or listing.ownership not in config.ownership_in:
+            return False
+    if config.condition_in:
+        if listing.condition is None or listing.condition not in config.condition_in:
+            return False
     if config.price_min is not None:
         if listing.price is None or listing.price < config.price_min:
             return False
     if config.price_max is not None:
         if listing.price is None or listing.price > config.price_max:
-            return False
-    if config.city_contains:
-        haystack = (listing.city or "").lower()
-        if config.city_contains.lower() not in haystack:
-            return False
-    if config.disposition_in:
-        if (listing.disposition or "") not in config.disposition_in:
             return False
     if config.surface_min is not None:
         if listing.surface_m2 is None or listing.surface_m2 < config.surface_min:
@@ -45,8 +60,11 @@ def matches(config: BotConfig, listing: Listing) -> bool:
     if config.surface_max is not None:
         if listing.surface_m2 is None or listing.surface_m2 > config.surface_max:
             return False
-    if not _matches_keyword(listing.title, config.title_keywords):
-        return False
+    if config.region_osm_ids and config.radius_km is not None:
+        if not region_centers:
+            return False
+        if not _in_radius(listing, config.radius_km, region_centers):
+            return False
     return True
 
 

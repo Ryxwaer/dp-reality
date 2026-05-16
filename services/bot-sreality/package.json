@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build": "nest build",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "dump:regions": "bun run scripts/dump-regions.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

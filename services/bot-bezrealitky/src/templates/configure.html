@@ -156,6 +156,27 @@
       border-color: var(--primary);
       color: var(--primary);
     }
+
+    .region-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px 5px 10px;
+      font-size: 12px;
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .region-chip button {
+      cursor: pointer;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 4px;
+    }
   </style>
 </head>
 <body>
@@ -184,10 +205,10 @@
     <div class="card stack">
       <div>
         <h3>Quick import</h3>
-        <p class="desc">Paste any bezrealitky.cz filter URL and we&rsquo;ll fill the form below.</p>
+        <p class="desc">Paste any bezrealitky.cz <code>/vyhledat?…</code> URL and we&rsquo;ll fill the form below, including the location and radius.</p>
       </div>
       <div class="field-row">
-        <input id="import-url" class="input" type="url" placeholder="https://www.bezrealitky.cz/vypis/nabidka-prodej/byt?…" />
+        <input id="import-url" class="input" type="url" placeholder="https://www.bezrealitky.cz/vyhledat?estateType=BYT&offerType=PRODEJ&…" />
         <button id="import-btn" type="button" class="btn">Import</button>
       </div>
       <div id="import-msg" class="help-inline" aria-live="polite"></div>
@@ -196,48 +217,81 @@
     <div class="card stack">
       <div>
         <h3>Filters</h3>
-        <p class="desc">Empty fields = wildcard.</p>
+        <p class="desc">Each field below maps 1:1 to a query parameter on bezrealitky.cz. Empty fields = wildcard.</p>
       </div>
+
       <div class="grid-2">
         <div>
           <label for="offer">Offer type</label>
           <select id="offer" class="select">
             <option value="">Any</option>
-            <option value="sale">Sale</option>
-            <option value="rent">Rent</option>
+            <option value="PRODEJ">Sale (PRODEJ)</option>
+            <option value="PRONAJEM">Rent (PRONAJEM)</option>
           </select>
         </div>
         <div>
-          <label for="prop">Property type</label>
-          <select id="prop" class="select">
+          <label for="estate">Estate type</label>
+          <select id="estate" class="select">
             <option value="">Any</option>
-            <option value="apartment">Apartment</option>
-            <option value="house">House</option>
-            <option value="land">Land</option>
-            <option value="commercial">Commercial</option>
-            <option value="other">Other</option>
+            <option value="BYT">Apartment (BYT)</option>
+            <option value="DUM">House (DUM)</option>
+            <option value="POZEMEK">Land (POZEMEK)</option>
+            <option value="GARAZ">Garage (GARAZ)</option>
+            <option value="KANCELAR">Office (KANCELAR)</option>
+            <option value="NEBYTOVY_PROSTOR">Non-residential (NEBYTOVY_PROSTOR)</option>
+            <option value="REKREACNI_OBJEKT">Leisure (REKREACNI_OBJEKT)</option>
           </select>
         </div>
       </div>
+
       <div>
         <label>Disposition</label>
         <div id="dispo-chips" class="chips" role="group" aria-label="Disposition filter">
-          <button type="button" class="chip" data-value="1+kk" aria-pressed="false">1+kk</button>
-          <button type="button" class="chip" data-value="1+1" aria-pressed="false">1+1</button>
-          <button type="button" class="chip" data-value="2+kk" aria-pressed="false">2+kk</button>
-          <button type="button" class="chip" data-value="2+1" aria-pressed="false">2+1</button>
-          <button type="button" class="chip" data-value="3+kk" aria-pressed="false">3+kk</button>
-          <button type="button" class="chip" data-value="3+1" aria-pressed="false">3+1</button>
-          <button type="button" class="chip" data-value="4+kk" aria-pressed="false">4+kk</button>
-          <button type="button" class="chip" data-value="4+1" aria-pressed="false">4+1</button>
-          <button type="button" class="chip" data-value="5+kk" aria-pressed="false">5+kk</button>
-          <button type="button" class="chip" data-value="5+1" aria-pressed="false">5+1</button>
-          <button type="button" class="chip" data-value="6+kk" aria-pressed="false">6+kk</button>
-          <button type="button" class="chip" data-value="garsoniera" aria-pressed="false">Garsoniéra</button>
-          <button type="button" class="chip" data-value="ostatní" aria-pressed="false">Other</button>
+          <button type="button" class="chip" data-value="GARSONIERA" aria-pressed="false">Garsoniéra</button>
+          <button type="button" class="chip" data-value="DISP_1_KK" aria-pressed="false">1+kk</button>
+          <button type="button" class="chip" data-value="DISP_1_1" aria-pressed="false">1+1</button>
+          <button type="button" class="chip" data-value="DISP_2_KK" aria-pressed="false">2+kk</button>
+          <button type="button" class="chip" data-value="DISP_2_1" aria-pressed="false">2+1</button>
+          <button type="button" class="chip" data-value="DISP_3_KK" aria-pressed="false">3+kk</button>
+          <button type="button" class="chip" data-value="DISP_3_1" aria-pressed="false">3+1</button>
+          <button type="button" class="chip" data-value="DISP_4_KK" aria-pressed="false">4+kk</button>
+          <button type="button" class="chip" data-value="DISP_4_1" aria-pressed="false">4+1</button>
+          <button type="button" class="chip" data-value="DISP_5_KK" aria-pressed="false">5+kk</button>
+          <button type="button" class="chip" data-value="DISP_5_1" aria-pressed="false">5+1</button>
+          <button type="button" class="chip" data-value="DISP_6_KK" aria-pressed="false">6+kk</button>
+          <button type="button" class="chip" data-value="DISP_6_1" aria-pressed="false">6+1</button>
+          <button type="button" class="chip" data-value="OSTATNI" aria-pressed="false">Other</button>
         </div>
         <span class="help-inline">Click to add or remove. Empty selection matches all.</span>
       </div>
+
+      <div>
+        <label>Ownership</label>
+        <div id="own-chips" class="chips" role="group" aria-label="Ownership filter">
+          <button type="button" class="chip" data-value="OSOBNI" aria-pressed="false">Personal</button>
+          <button type="button" class="chip" data-value="DRUZSTEVNI" aria-pressed="false">Cooperative</button>
+          <button type="button" class="chip" data-value="OBECNI" aria-pressed="false">Municipal</button>
+          <button type="button" class="chip" data-value="OSTATNI" aria-pressed="false">Other</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Condition</label>
+        <div id="cond-chips" class="chips" role="group" aria-label="Condition filter">
+          <button type="button" class="chip" data-value="NEW" aria-pressed="false">New</button>
+          <button type="button" class="chip" data-value="VERY_GOOD" aria-pressed="false">Very good</button>
+          <button type="button" class="chip" data-value="GOOD" aria-pressed="false">Good</button>
+          <button type="button" class="chip" data-value="BAD" aria-pressed="false">Bad</button>
+          <button type="button" class="chip" data-value="CONSTRUCTION" aria-pressed="false">Under construction</button>
+          <button type="button" class="chip" data-value="PROJECT" aria-pressed="false">Project</button>
+          <button type="button" class="chip" data-value="BEFORE_RECONSTRUCTION" aria-pressed="false">Before reconstruction</button>
+          <button type="button" class="chip" data-value="AFTER_RECONSTRUCTION" aria-pressed="false">After reconstruction</button>
+          <button type="button" class="chip" data-value="AFTER_PARTIAL_RECONSTRUCTION" aria-pressed="false">After partial reconstruction</button>
+          <button type="button" class="chip" data-value="IN_RECONSTRUCTION" aria-pressed="false">In reconstruction</button>
+          <button type="button" class="chip" data-value="DEMOLITION" aria-pressed="false">Demolition</button>
+        </div>
+      </div>
+
       <div class="grid-2">
         <div>
           <label for="pmin">Price min (CZK)</label>
@@ -258,15 +312,22 @@
           <input id="smax" class="input" type="number" min="0" step="1" placeholder="—" />
         </div>
       </div>
+
       <div>
-        <label for="city">City contains</label>
-        <input id="city" class="input" placeholder="e.g. Brno" />
-        <span class="help-inline">Case-insensitive substring of the city name.</span>
-      </div>
-      <div>
-        <label for="kw">Title must contain</label>
-        <input id="kw" class="input" placeholder="e.g. balkon, lodzie" />
-        <span class="help-inline">Comma-separated. All keywords must appear in the title (case-insensitive).</span>
+        <label>Location</label>
+        <div id="region-chips" class="chips" aria-live="polite">
+          <span id="region-empty" class="help-inline" style="margin: 0">No region selected — listings from anywhere in Czechia will match.</span>
+        </div>
+        <div class="grid-2" style="margin-top: 10px">
+          <div>
+            <label for="radius">Radius (km)</label>
+            <input id="radius" class="input" type="number" min="1" max="200" step="1" placeholder="—" />
+            <span class="help-inline">Distance from each selected region's centre. Required when at least one region is selected.</span>
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button id="region-clear" type="button" class="btn btn-ghost">Clear regions</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -296,18 +357,15 @@
     }
     document.getElementById('general-card').hidden = true;
 
-    let isEditMode = false;
-
     function csrfHeaders() {
-      var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
+      const match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
       return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
     }
     function mergeHeaders(base) {
-      var extra = csrfHeaders();
-      var out = {};
-      for (var k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
-      for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) out[k2] = extra[k2];
-      return out;
+      return Object.assign({}, base, csrfHeaders());
+    }
+    function endpoint(path) {
+      return isEmbedded ? '/modules/bot-bezrealitky' + path : path;
     }
 
     const els = {
@@ -315,64 +373,109 @@
       importBtn: document.getElementById('import-btn'),
       importMsg: document.getElementById('import-msg'),
       offer: document.getElementById('offer'),
-      prop: document.getElementById('prop'),
+      estate: document.getElementById('estate'),
       dispoChips: document.getElementById('dispo-chips'),
+      ownChips: document.getElementById('own-chips'),
+      condChips: document.getElementById('cond-chips'),
       pmin: document.getElementById('pmin'),
       pmax: document.getElementById('pmax'),
       smin: document.getElementById('smin'),
       smax: document.getElementById('smax'),
-      city: document.getElementById('city'),
-      kw: document.getElementById('kw'),
+      regionChips: document.getElementById('region-chips'),
+      regionEmpty: document.getElementById('region-empty'),
+      regionClear: document.getElementById('region-clear'),
+      radius: document.getElementById('radius'),
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
       formMsg: document.getElementById('form-msg')
     };
 
-    function csv(s) {
-      return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
-    }
+    let isEditMode = false;
+    let regions = [];
+
     function intOrNull(v) {
       const n = parseInt(v, 10);
       return Number.isFinite(n) ? n : null;
     }
-    function getSelectedDispositions() {
-      return Array.from(
-        els.dispoChips.querySelectorAll('.chip[aria-pressed="true"]')
-      ).map((b) => b.dataset.value);
+    function getPressed(container) {
+      return Array.from(container.querySelectorAll('.chip[aria-pressed="true"]'))
+        .map((b) => b.dataset.value);
     }
-    function setSelectedDispositions(values) {
+    function setPressed(container, values) {
       const set = new Set((values || []).map(String));
-      els.dispoChips.querySelectorAll('.chip').forEach((chip) => {
-        chip.setAttribute(
-          'aria-pressed',
-          set.has(chip.dataset.value) ? 'true' : 'false',
-        );
+      container.querySelectorAll('.chip').forEach((chip) => {
+        chip.setAttribute('aria-pressed', set.has(chip.dataset.value) ? 'true' : 'false');
       });
     }
-    els.dispoChips.addEventListener('click', (event) => {
-      const target = event.target.closest('.chip');
-      if (!target) return;
-      const pressed = target.getAttribute('aria-pressed') === 'true';
-      target.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+    function bindChipToggle(container) {
+      container.addEventListener('click', (event) => {
+        const target = event.target.closest('.chip');
+        if (!target) return;
+        const pressed = target.getAttribute('aria-pressed') === 'true';
+        target.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+      });
+    }
+    bindChipToggle(els.dispoChips);
+    bindChipToggle(els.ownChips);
+    bindChipToggle(els.condChips);
+
+    function renderRegions() {
+      els.regionChips.querySelectorAll('.region-chip').forEach((n) => n.remove());
+      els.regionEmpty.style.display = regions.length === 0 ? '' : 'none';
+      regions.forEach((r) => {
+        const span = document.createElement('span');
+        span.className = 'region-chip';
+        span.dataset.osmId = String(r.osm_id);
+        span.textContent = r.name || ('OSM ' + r.osm_id);
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.setAttribute('aria-label', 'Remove ' + (r.name || r.osm_id));
+        x.textContent = '×';
+        x.addEventListener('click', () => {
+          regions = regions.filter((rr) => rr.osm_id !== r.osm_id);
+          renderRegions();
+          notifyResize();
+        });
+        span.appendChild(x);
+        els.regionChips.appendChild(span);
+      });
+    }
+    els.regionClear.addEventListener('click', () => {
+      regions = [];
+      renderRegions();
+      notifyResize();
     });
 
-    function applyParsed(p) {
-      if (typeof p.offer_type === 'string') els.offer.value = p.offer_type;
-      if (typeof p.property_type === 'string') els.prop.value = p.property_type;
-      if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
-      if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
-      if (typeof p.surface_min === 'number') els.smin.value = String(p.surface_min);
-      if (typeof p.surface_max === 'number') els.smax.value = String(p.surface_max);
-      if (typeof p.city_contains === 'string') els.city.value = p.city_contains;
-      if (typeof p.title_keywords === 'string') els.kw.value = p.title_keywords;
-      if (Array.isArray(p.disposition_in)) setSelectedDispositions(p.disposition_in);
+    async function lookupRegions(osmIds) {
+      if (!osmIds || osmIds.length === 0) return [];
+      const url = endpoint('/regions/lookup') + '?osm_ids=' + encodeURIComponent(osmIds.join(','));
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || ('regions/lookup HTTP ' + res.status));
+      }
+      const body = await res.json();
+      return body.results || [];
+    }
+
+    function applyParsed(parsed) {
+      if (typeof parsed.offer_type === 'string') els.offer.value = parsed.offer_type;
+      if (typeof parsed.estate_type === 'string') els.estate.value = parsed.estate_type;
+      if (Array.isArray(parsed.disposition_in)) setPressed(els.dispoChips, parsed.disposition_in);
+      if (Array.isArray(parsed.ownership_in)) setPressed(els.ownChips, parsed.ownership_in);
+      if (Array.isArray(parsed.condition_in)) setPressed(els.condChips, parsed.condition_in);
+      if (typeof parsed.price_min === 'number') els.pmin.value = String(parsed.price_min);
+      if (typeof parsed.price_max === 'number') els.pmax.value = String(parsed.price_max);
+      if (typeof parsed.surface_min === 'number') els.smin.value = String(parsed.surface_min);
+      if (typeof parsed.surface_max === 'number') els.smax.value = String(parsed.surface_max);
+      if (typeof parsed.radius_km === 'number') els.radius.value = String(parsed.radius_km);
     }
 
     async function loadExisting() {
       if (!configId) return;
       try {
         const url = isEmbedded
-          ? '/modules/bot-bezrealitky/configs/' + configId
+          ? endpoint('/configs/' + configId)
           : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
         const res = await fetch(url, { credentials: 'same-origin' });
         if (res.status === 404) {
@@ -386,14 +489,23 @@
         els.submit.textContent = 'Save changes';
         const c = doc.config || {};
         if (c.offer_type) els.offer.value = c.offer_type;
-        if (c.property_type) els.prop.value = c.property_type;
+        if (c.estate_type) els.estate.value = c.estate_type;
+        if (Array.isArray(c.disposition_in)) setPressed(els.dispoChips, c.disposition_in);
+        if (Array.isArray(c.ownership_in)) setPressed(els.ownChips, c.ownership_in);
+        if (Array.isArray(c.condition_in)) setPressed(els.condChips, c.condition_in);
         if (c.price_min != null) els.pmin.value = String(c.price_min);
         if (c.price_max != null) els.pmax.value = String(c.price_max);
         if (c.surface_min != null) els.smin.value = String(c.surface_min);
         if (c.surface_max != null) els.smax.value = String(c.surface_max);
-        if (c.city_contains) els.city.value = c.city_contains;
-        if (Array.isArray(c.disposition_in)) setSelectedDispositions(c.disposition_in);
-        if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
+        if (c.radius_km != null) els.radius.value = String(c.radius_km);
+        if (Array.isArray(c.region_osm_ids) && c.region_osm_ids.length) {
+          try {
+            regions = await lookupRegions(c.region_osm_ids);
+          } catch (err) {
+            regions = c.region_osm_ids.map((id) => ({ osm_id: id, name: 'OSM ' + id }));
+          }
+          renderRegions();
+        }
       } catch {}
     }
 
@@ -414,8 +526,7 @@
       if (!url) return;
       els.importBtn.disabled = true;
       try {
-        const endpoint = isEmbedded ? '/modules/bot-bezrealitky/parse-url' : '/parse-url';
-        const res = await fetch(endpoint, {
+        const res = await fetch(endpoint('/parse-url'), {
           method: 'POST',
           headers: mergeHeaders({ 'Content-Type': 'application/json' }),
           credentials: 'same-origin',
@@ -426,7 +537,17 @@
           showImportMsg('error', (data && data.reason) || 'Could not parse URL.');
           return;
         }
-        applyParsed(data.parsed || {});
+        const parsed = data.parsed || {};
+        applyParsed(parsed);
+        if (Array.isArray(parsed.region_osm_ids) && parsed.region_osm_ids.length) {
+          try {
+            regions = await lookupRegions(parsed.region_osm_ids);
+          } catch (err) {
+            showImportMsg('error', 'Region lookup failed: ' + err.message);
+            return;
+          }
+          renderRegions();
+        }
         showImportMsg('success', 'Filters imported from URL.');
         els.importUrl.value = '';
       } catch {
@@ -442,14 +563,16 @@
     function buildConfig() {
       return {
         offer_type: els.offer.value || null,
-        property_type: els.prop.value || null,
+        estate_type: els.estate.value || null,
+        disposition_in: getPressed(els.dispoChips),
+        ownership_in: getPressed(els.ownChips),
+        condition_in: getPressed(els.condChips),
         price_min: intOrNull(els.pmin.value),
         price_max: intOrNull(els.pmax.value),
         surface_min: intOrNull(els.smin.value),
         surface_max: intOrNull(els.smax.value),
-        city_contains: els.city.value.trim() || null,
-        disposition_in: getSelectedDispositions(),
-        title_keywords: csv(els.kw.value)
+        region_osm_ids: regions.map((r) => r.osm_id),
+        radius_km: intOrNull(els.radius.value)
       };
     }
 
@@ -468,48 +591,49 @@
       els.formMsg.textContent = '';
     }
 
+    function validate(cfg) {
+      if (cfg.region_osm_ids.length > 0 && !cfg.radius_km) {
+        return 'Please set a radius (km) when one or more regions are selected.';
+      }
+      if (cfg.price_min != null && cfg.price_max != null && cfg.price_min > cfg.price_max) {
+        return 'Price min must be ≤ price max.';
+      }
+      if (cfg.surface_min != null && cfg.surface_max != null && cfg.surface_min > cfg.surface_max) {
+        return 'Surface min must be ≤ surface max.';
+      }
+      return null;
+    }
+
     els.submit.addEventListener('click', async () => {
       clearFormMsg();
       const config = buildConfig();
-      if (isEmbedded) {
-        els.submit.disabled = true;
-        try {
-          const saveRes = await fetch('/modules/bot-bezrealitky/configs/' + configId, {
-            method: 'POST',
-            headers: mergeHeaders({ 'Content-Type': 'application/json' }),
-            credentials: 'same-origin',
-            body: JSON.stringify({ config: config })
-          });
-          if (!saveRes.ok) {
-            const j = await saveRes.json().catch(() => ({}));
-            showFormError(j.detail || j.message || 'Could not save bot.');
-            return;
-          }
+      const err = validate(config);
+      if (err) { showFormError(err); return; }
+      els.submit.disabled = true;
+      try {
+        const url = isEmbedded
+          ? endpoint('/configs/' + configId)
+          : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId);
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: mergeHeaders({ 'Content-Type': 'application/json' }),
+          credentials: 'same-origin',
+          body: JSON.stringify({ config })
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          showFormError(j.detail || j.message || 'Could not save bot.');
+          return;
+        }
+        if (isEmbedded) {
           window.parent.postMessage({ type: 'module:saved' }, PARENT_ORIGIN);
-        } catch {
-          showFormError('Could not save bot.');
-        } finally {
-          els.submit.disabled = false;
-        }
-      } else {
-        if (!userId) { showFormError('user_id query param is required when running standalone.'); return; }
-        els.submit.disabled = true;
-        try {
-          const res = await fetch('/configs/' + configId + '?user_id=' + encodeURIComponent(userId), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: config })
-          });
-          if (!res.ok) {
-            showFormError('Could not save: HTTP ' + res.status);
-            return;
-          }
+        } else {
           showFormSuccess('Saved.');
-        } catch {
-          showFormError('Could not contact bot service.');
-        } finally {
-          els.submit.disabled = false;
         }
+      } catch {
+        showFormError('Could not save bot.');
+      } finally {
+        els.submit.disabled = false;
       }
     });
 
@@ -542,6 +666,7 @@
       }
     });
 
+    renderRegions();
     loadExisting().then(notifyResize);
   })();
   </script>

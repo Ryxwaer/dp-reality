@@ -5,6 +5,7 @@ import { Listing, ListingSchema } from './listing.schema.js';
 import { BotConfig, BotConfigSchema } from './bot-config.schema.js';
 import { NotificationRow, NotificationSchema } from './notification.schema.js';
 import { ModuleRegistryEntry, ModuleRegistrySchema } from './registry.schema.js';
+import { Region, RegionSchema } from './region.schema.js';
 import { ScraperService } from './scraper.service.js';
 import { RepositoryService } from './repository.service.js';
 import { PublisherService } from './publisher.service.js';
@@ -12,13 +13,13 @@ import { MatcherService } from './matcher.service.js';
 import { NotificationRendererService } from './notification-renderer.service.js';
 import { CycleService } from './cycle.service.js';
 import { RegistryService } from './registry.service.js';
+import { RegionSeederService } from './region-seeder.service.js';
 import { WelcomeService } from './welcome.service.js';
 import { BotsController } from './bots.controller.js';
 import { ConfigureController } from './configure.controller.js';
 import { ParseUrlController } from './parse-url.controller.js';
-import { SuggestController } from './suggest.controller.js';
+import { RegionsController } from './regions.controller.js';
 import { HealthController } from './health.controller.js';
-import { SrealityLocationService } from './sreality-location.service.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SrealityLocationService } from './sreality-location.service.js';
       { name: BotConfig.name, schema: BotConfigSchema },
       { name: NotificationRow.name, schema: NotificationSchema },
       { name: ModuleRegistryEntry.name, schema: ModuleRegistrySchema },
+      { name: Region.name, schema: RegionSchema },
     ]),
   ],
   providers: [
@@ -38,14 +40,14 @@ import { SrealityLocationService } from './sreality-location.service.js';
     CycleService,
     ScraperService,
     RegistryService,
+    RegionSeederService,
     WelcomeService,
-    SrealityLocationService,
   ],
   controllers: [
     BotsController,
     ConfigureController,
     ParseUrlController,
-    SuggestController,
+    RegionsController,
     HealthController,
   ],
 })

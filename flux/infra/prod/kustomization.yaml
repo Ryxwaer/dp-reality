@@ -9,3 +9,4 @@ resources:
   - tailscale-operator.yaml
   - secrets/tailscale-operator-oauth.yaml
   - loki.yaml
+  - tempo.yaml

@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from pathlib import Path
 
 import aio_pika
 import motor.motor_asyncio
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from . import api, cycle, repository
+from . import api, cycle, geo, repository
 from .config import settings
 
 logging.basicConfig(
@@ -24,6 +25,8 @@ async def main() -> None:
     db = client.get_default_database()
     await repository.ensure_indexes(db)
     await repository.migrate(db)
+    await geo.ensure_indexes(db)
+    await geo.seed_if_needed(db, Path(settings.geo_data_path))
     await repository.upsert_registry(db)
 
     rabbitmq = await aio_pika.connect_robust(settings.rabbitmq_url)

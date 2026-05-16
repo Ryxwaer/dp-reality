@@ -11,9 +11,8 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import repository, welcome
+from . import geo, repository, welcome
 from .config import settings
-from .geo_client import geo_client
 from .models import BotConfig
 
 logger = logging.getLogger(__name__)
@@ -94,7 +93,7 @@ def parse_bazos_url(raw: str) -> dict[str, Any]:
 
     hledat = (qs.get("hledat") or [""])[0].strip()
     if hledat:
-        out["title_keywords"] = hledat
+        out["keywords"] = hledat
 
     if not out:
         return {"ok": False, "reason": "Could not extract any filters from this URL."}
@@ -125,10 +124,12 @@ def build_router() -> APIRouter:
 
     @router.get("/city/suggest")
     async def city_suggest(
+        request: Request,
         q: str = Query(..., min_length=1, max_length=80),
         limit: int = Query(8, ge=1, le=20),
     ) -> JSONResponse:
-        hits = await geo_client.resolve_city(q, limit=limit)
+        db, _ = _state(request)
+        hits = await geo.resolve_city(db, q, limit=limit)
         return JSONResponse({"results": hits})
 
     @router.get("/configs/{config_id}")

@@ -42,3 +42,14 @@ metadata:
   name: logging
   labels:
     app.kubernetes.io/part-of: dp-reality
+---
+# Tempo (distributed traces / service-graph generator). Symmetric to
+# `logging/`: own namespace so cross-namespace RBAC stays tight and so
+# adding a future trace pipeline (Beyla, OpenTelemetry Collector, …)
+# slots in next to it without polluting `monitoring/`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tracing
+  labels:
+    app.kubernetes.io/part-of: dp-reality

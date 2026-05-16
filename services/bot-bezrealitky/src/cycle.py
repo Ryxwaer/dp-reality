@@ -1,4 +1,3 @@
-"""End-to-end scrape -> enrich -> match -> notify -> emit cycle."""
 from __future__ import annotations
 
 import logging
@@ -12,7 +11,7 @@ import aio_pika
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
-from . import matcher, notifications, publisher, repository, scraper
+from . import geo, matcher, notifications, publisher, repository, scraper
 from .config import settings
 from .models import BotConfig, Listing
 
@@ -20,13 +19,6 @@ logger = logging.getLogger(__name__)
 
 _MAX_CONSECUTIVE_FAILURES = 3
 _consecutive_failures = 0
-
-# When Bezrealitky responds 429 / 403 we record the wall-clock time
-# and skip subsequent cycles until the backoff window elapses. The
-# orchestrator-level interval (`scrape_interval_minutes`) still fires
-# on schedule; the cycle function itself becomes a no-op while
-# `_blocked_until` is in the future, which gives us the per-block
-# pause the thesis demands without holding the scheduler thread.
 _blocked_until: float = 0.0
 
 
@@ -38,9 +30,7 @@ async def run_cycle(
     now = time.monotonic()
     if now < _blocked_until:
         remaining = int(_blocked_until - now)
-        logger.info(
-            "Skipping cycle, in backoff window (%ds remaining)", remaining
-        )
+        logger.info("Skipping cycle, in backoff window (%ds remaining)", remaining)
         return
 
     run_id = str(uuid.uuid4())
@@ -52,8 +42,7 @@ async def run_cycle(
             _blocked_until = time.monotonic() + settings.backoff_minutes_on_block * 60
             logger.warning(
                 "bezrealitky blocked us (%s); backing off for %d min",
-                exc,
-                settings.backoff_minutes_on_block,
+                exc, settings.backoff_minutes_on_block,
             )
             return
 
@@ -73,13 +62,10 @@ async def run_cycle(
         _consecutive_failures += 1
         logger.exception(
             "Scrape cycle failed (%d/%d consecutive)",
-            _consecutive_failures,
-            _MAX_CONSECUTIVE_FAILURES,
+            _consecutive_failures, _MAX_CONSECUTIVE_FAILURES,
         )
         if _consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-            logger.critical(
-                "Consecutive failure threshold reached \u2014 exiting for restart"
-            )
+            logger.critical("Consecutive failure threshold reached — exiting for restart")
             os._exit(1)
 
 
@@ -88,12 +74,23 @@ async def _persist_detail(
 ) -> None:
     for listing in listings:
         if listing.description or listing.energy_class or listing.photos:
-            try:
-                await repository.update_listing_detail(db, listing)
-            except Exception as exc:
-                logger.warning(
-                    "could not persist detail for %s: %s", listing.source_id, exc
-                )
+            await repository.update_listing_detail(db, listing)
+
+
+async def _resolve_region_centers(
+    db: AsyncIOMotorDatabase, cfg: BotConfig
+) -> list[tuple[float, float]]:
+    """Look up every (cached) anchor for `cfg.region_osm_ids`.
+
+    Configs are required to have all referenced OSM ids in
+    `bezrealitky_geo` at save time (api.py enforces it). If a row has
+    since been deleted manually, the matcher's fail-closed posture
+    skips the radius filter for that listing rather than match-all.
+    """
+    if not cfg.region_osm_ids or cfg.radius_km is None:
+        return []
+    records = await geo.find_many(db, cfg.region_osm_ids)
+    return [(r["lat"], r["lon"]) for r in records.values() if r.get("lat") and r.get("lon")]
 
 
 async def _match_and_notify(
@@ -115,10 +112,11 @@ async def _match_and_notify(
         except ValidationError as err:
             logger.warning("skip invalid config %s: %s", cfg_doc.get("_id"), err)
             continue
+        region_centers = await _resolve_region_centers(db, cfg)
         config_id = str(cfg_doc["_id"])
         user_id = str(cfg_doc["user_id"])
         for listing in new_listings:
-            if matcher.matches(cfg, listing):
+            if matcher.matches(cfg, listing, region_centers=region_centers):
                 rows_by_user[user_id].append(
                     notifications.build_notification(
                         user_id=user_id,
@@ -137,14 +135,9 @@ async def _match_and_notify(
             users_with_inserts.add(user_id)
 
     for user_id in users_with_inserts:
-        try:
-            await publisher.publish_bot_processed(
-                rabbitmq,
-                user_id=user_id,
-                bot_id=settings.service_id,
-                run_id=run_id,
-            )
-        except Exception as err:
-            logger.warning(
-                "publish notify.bot.processed failed (rows persisted): %s", err
-            )
+        await publisher.publish_bot_processed(
+            rabbitmq,
+            user_id=user_id,
+            bot_id=settings.service_id,
+            run_id=run_id,
+        )

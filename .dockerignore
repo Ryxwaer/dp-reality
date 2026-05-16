@@ -14,6 +14,7 @@
 .vscode
 .idea
 services/module-sdk/examples/*/dist
+services/bot-sreality/data
 k3s
 BUSINESS.md
 architecture.md

@@ -7,11 +7,6 @@
   <link rel="preconnect" href="https://rsms.me/" />
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
   <style>
-    /* Tokens chosen to mirror the Nuxt UI app shell (zinc neutral +
-       green-500 primary), so when the page is embedded in the BFF
-       modal the visual language stays consistent. The body background
-       is intentionally transparent in embedded mode — the parent's
-       modal surface shows through and there is no boundary. */
     :root {
       color-scheme: light;
       --bg: #ffffff;
@@ -136,17 +131,6 @@
     }
     .pills { display: flex; flex-wrap: wrap; gap: 6px; }
 
-    .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .switch .slider { position: absolute; inset: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; transition: background .12s; }
-    .switch .slider::before { content: ""; position: absolute; left: 1px; top: 1px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: transform .12s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-    .switch input:checked + .slider { background: var(--primary); border-color: var(--primary); }
-    .switch input:checked + .slider::before { transform: translateX(16px); }
-
-    .row-flex { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    .row-flex > div:first-child { flex: 1; }
-    .row-flex label { margin-bottom: 2px; }
-
     .footer {
       display: flex; gap: 8px; justify-content: flex-end;
       padding-top: 14px;
@@ -201,27 +185,6 @@
 </head>
 <body>
   <div class="stack" id="root">
-    <div class="card stack" id="general-card">
-      <div>
-        <h3>General</h3>
-        <p class="desc">How the bot is named in your dashboard and whether it sends digest emails.</p>
-      </div>
-      <div>
-        <label for="name">Name</label>
-        <input id="name" class="input" placeholder="e.g. Brno 2+kk under 5M" maxlength="100" />
-      </div>
-      <div class="row-flex">
-        <div>
-          <label>Email digest</label>
-          <span class="help-inline">Send a digest email when this bot finds new matches.</span>
-        </div>
-        <label class="switch">
-          <input id="email" type="checkbox" />
-          <span class="slider" aria-hidden="true"></span>
-        </label>
-      </div>
-    </div>
-
     <div class="card stack">
       <div>
         <h3>Quick import</h3>
@@ -282,27 +245,12 @@
             <button type="button" class="combo-chip-clear" id="center-chip-clear" aria-label="Clear centre">&times;</button>
           </div>
         </div>
-        <span class="help-inline">Pick a municipality, district or ward. Only used when a radius is set.</span>
+        <span class="help-inline">Pick a municipality, district or ward. Required when a radius is set.</span>
       </div>
       <div>
         <label for="radius">Radius (km)</label>
         <input id="radius" class="input" type="number" min="1" max="200" step="1" placeholder="\u2014" />
         <span class="help-inline">Listings without coordinates are excluded when a radius is set.</span>
-      </div>
-      <div>
-        <label for="city">City contains</label>
-        <input id="city" class="input" placeholder="e.g. Brno" />
-        <span class="help-inline">Substring match on listing city. Ignore if you set a radius above.</span>
-      </div>
-      <div>
-        <label for="kw">Title must contain</label>
-        <input id="kw" class="input" placeholder="e.g. balkon, lodzie" />
-        <span class="help-inline">Comma-separated. All keywords must appear in the title (case-insensitive).</span>
-      </div>
-      <div>
-        <label for="labels">Labels</label>
-        <input id="labels" class="input" placeholder="e.g. novostavba, balkon" />
-        <span class="help-inline">Listing matches if it carries at least one of these labels.</span>
       </div>
     </div>
 
@@ -329,37 +277,25 @@
       [44, 'Farm'], [48, 'Mobile home'], [54, 'Multi-generation']
     ];
 
-    // URL contract is intentionally tiny: only config_id (always) and
-    // user_id (only in standalone — the BFF reverse proxy injects it
-    // from the session in embedded mode). Everything else (name, email
-    // pref, theme) is BFF-owned and lives outside the iframe.
     const params = new URLSearchParams(location.search);
     const configId = params.get('config_id') || '';
     const userId = params.get('user_id') || '';
 
     const isEmbedded = window.parent && window.parent !== window;
     const PARENT_ORIGIN = window.location.origin;
-    // Default theme follows the OS; the BFF parent overrides via the
-    // module:set-theme postMessage handler below.
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
     }
     if (!isEmbedded) {
       document.documentElement.classList.add('standalone');
     }
-    // The General card (name + email pref) is BFF-owned; the iframe
-    // never collects or shows it, regardless of embedding mode.
-    document.getElementById('general-card').hidden = true;
 
     let isEditMode = false;
 
-    // Same-origin double-submit CSRF: the BFF set a `csrf-token` cookie
-    // (non-HttpOnly) on the user's session; for every state-changing
-    // call through the /modules/* reverse proxy we echo it back as a
-    // header so the BFF middleware can compare against the server-side
-    // value. Standalone mode hits the bot directly on its own port,
-    // skipping the BFF — the cookie is absent there and the header is
-    // simply omitted.
+    // Same-origin double-submit CSRF: the BFF sets a non-HttpOnly
+    // `csrf-token` cookie; we echo it back on every state-changing call
+    // through the /modules/* reverse proxy. Standalone hits the bot
+    // directly so the cookie is absent and the header is omitted.
     function csrfHeaders() {
       var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
       return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
@@ -388,18 +324,13 @@
       centerChipLabel: document.getElementById('center-chip-label'),
       centerChipClear: document.getElementById('center-chip-clear'),
       radius: document.getElementById('radius'),
-      city: document.getElementById('city'),
-      kw: document.getElementById('kw'),
-      labels: document.getElementById('labels'),
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
       formMsg: document.getElementById('form-msg'),
       submitBtn: document.getElementById('submit-btn')
     };
 
-    // Selected centre: persisted as {type:'Point', coordinates:[lon,lat]}
-    // plus a display label. Null when no centre is picked.
-    let centerSelected = null; // { lat, lon, label }
+    let centerSelected = null; // { id, region_typ, name, label, lat, lon }
 
     function showCenterChip() {
       if (!centerSelected) {
@@ -441,12 +372,19 @@
           labelSpan.textContent = h.label;
           const typSpan = document.createElement('span');
           typSpan.className = 'typ';
-          typSpan.textContent = h.entityType;
+          typSpan.textContent = h.region_typ;
           opt.appendChild(labelSpan);
           opt.appendChild(typSpan);
           opt.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            centerSelected = { lat: h.lat, lon: h.lon, label: h.label };
+            centerSelected = {
+              id: h.id,
+              region_typ: h.region_typ,
+              name: h.name,
+              label: h.label,
+              lat: h.lat,
+              lon: h.lon
+            };
             showCenterChip();
           });
           els.centerList.appendChild(opt);
@@ -456,36 +394,32 @@
       notifyResize();
     }
 
-    let suggestTimer = null;
-    let suggestSeq = 0;
-    async function runSuggest(q) {
-      const seq = ++suggestSeq;
-      try {
-        const endpoint = isEmbedded ? '/modules/bot-sreality/suggest' : '/suggest';
-        const res = await fetch(endpoint + '?q=' + encodeURIComponent(q), {
-          credentials: 'same-origin',
-          headers: mergeHeaders({})
-        });
-        if (!res.ok) { hideCenterList(); return; }
-        const data = await res.json();
-        if (seq !== suggestSeq) return; // stale response
-        renderCenterList(data && data.hits ? data.hits : []);
-      } catch {
-        if (seq === suggestSeq) hideCenterList();
-      }
+    let regionTimer = null;
+    let regionSeq = 0;
+    async function runRegions(q) {
+      const seq = ++regionSeq;
+      const endpoint = isEmbedded ? '/modules/bot-sreality/regions' : '/regions';
+      const res = await fetch(endpoint + '?q=' + encodeURIComponent(q), {
+        credentials: 'same-origin',
+        headers: mergeHeaders({})
+      });
+      if (!res.ok) { hideCenterList(); return; }
+      const data = await res.json();
+      if (seq !== regionSeq) return;
+      renderCenterList(data && data.hits ? data.hits : []);
     }
     els.centerSearch.addEventListener('input', () => {
       const q = els.centerSearch.value.trim();
-      if (suggestTimer) clearTimeout(suggestTimer);
+      if (regionTimer) clearTimeout(regionTimer);
       if (q.length < 2) { hideCenterList(); return; }
-      suggestTimer = setTimeout(() => runSuggest(q), 180);
+      regionTimer = setTimeout(() => runRegions(q), 180);
     });
     els.centerSearch.addEventListener('blur', () => {
       setTimeout(hideCenterList, 120);
     });
     els.centerSearch.addEventListener('focus', () => {
       const q = els.centerSearch.value.trim();
-      if (q.length >= 2) runSuggest(q);
+      if (q.length >= 2) runRegions(q);
     });
 
     let dispoSelected = new Set();
@@ -517,9 +451,6 @@
       renderDispo();
     });
 
-    function csv(s) {
-      return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
-    }
     function intOrNull(v) {
       const n = parseInt(v, 10);
       return Number.isFinite(n) ? n : null;
@@ -537,63 +468,56 @@
       }
       if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
       if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
-      // Geo replaces city_contains when present (the parser guarantees
-      // mutual exclusion). Otherwise fall back to the text filter.
-      if (p.center && Array.isArray(p.center.coordinates) && typeof p.radius_km === 'number') {
+      if (p.region_id && p.center && Array.isArray(p.center.coordinates) && typeof p.radius_km === 'number') {
         centerSelected = {
+          id: p.region_id,
+          region_typ: p.region_id.split(':')[0] || '',
+          name: (p.region_label || '').split('·')[0].trim() || 'Selected region',
+          label: (p.region_label || '').trim() || 'Selected region',
           lon: p.center.coordinates[0],
-          lat: p.center.coordinates[1],
-          label: (p.region_label || '').trim() || 'Selected region'
+          lat: p.center.coordinates[1]
         };
         els.radius.value = String(p.radius_km);
-        els.city.value = '';
         showCenterChip();
-      } else if (typeof p.city_contains === 'string') {
-        els.city.value = p.city_contains;
       }
     }
 
     async function loadExisting() {
       if (!configId) return;
-      try {
-        // Standalone needs explicit user_id (from URL); embedded gets
-        // it injected by the BFF reverse proxy from the session cookie.
-        const url = isEmbedded
-          ? '/modules/bot-sreality/configs/' + configId
-          : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
-        const res = await fetch(url, { credentials: 'same-origin' });
-        // 404 means create-mode (config_id was minted by the BFF but
-        // the bot has never seen it before). Anything else (200) is
-        // edit-mode and we prefill from the stored payload.
-        if (res.status === 404) {
-          isEditMode = false;
-          els.submit.textContent = 'Create bot';
-          return;
-        }
-        if (!res.ok) return;
-        const doc = await res.json();
-        isEditMode = true;
-        els.submit.textContent = 'Save changes';
-        const c = doc.config || {};
-        els.prop.value = c.category_main_cb != null ? String(c.category_main_cb) : '';
-        els.trans.value = c.category_type_cb != null ? String(c.category_type_cb) : '';
-        dispoSelected = new Set(Array.isArray(c.category_sub_cb) ? c.category_sub_cb : []);
-        renderDispo();
-        if (c.price_min != null) els.pmin.value = String(c.price_min);
-        if (c.price_max != null) els.pmax.value = String(c.price_max);
-        if (c.city_contains) els.city.value = c.city_contains;
-        if (c.center && Array.isArray(c.center.coordinates) && c.radius_km != null) {
-          centerSelected = {
-            lon: c.center.coordinates[0],
-            lat: c.center.coordinates[1],
-            label: (c.region_label || '').trim() || 'Saved region'
-          };
-          els.radius.value = String(c.radius_km);
-          showCenterChip();
-        }
-        if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
-        if (Array.isArray(c.labels_any)) els.labels.value = c.labels_any.join(', ');
-      } catch {}
+      const url = isEmbedded
+        ? '/modules/bot-sreality/configs/' + configId
+        : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
+      const res = await fetch(url, { credentials: 'same-origin' });
+      // 404 means create-mode (config_id was minted by the BFF but the
+      // bot has never seen it before). 200 is edit-mode and we prefill.
+      if (res.status === 404) {
+        isEditMode = false;
+        els.submit.textContent = 'Create bot';
+        return;
+      }
+      if (!res.ok) return;
+      const doc = await res.json();
+      isEditMode = true;
+      els.submit.textContent = 'Save changes';
+      const c = doc.config || {};
+      els.prop.value = c.category_main_cb != null ? String(c.category_main_cb) : '';
+      els.trans.value = c.category_type_cb != null ? String(c.category_type_cb) : '';
+      dispoSelected = new Set(Array.isArray(c.category_sub_cb) ? c.category_sub_cb : []);
+      renderDispo();
+      if (c.price_min != null) els.pmin.value = String(c.price_min);
+      if (c.price_max != null) els.pmax.value = String(c.price_max);
+      if (c.region_id && c.center && Array.isArray(c.center.coordinates) && c.radius_km != null) {
+        centerSelected = {
+          id: c.region_id,
+          region_typ: String(c.region_id).split(':')[0] || '',
+          name: (c.region_label || '').split('·')[0].trim() || 'Saved region',
+          label: (c.region_label || '').trim() || 'Saved region',
+          lon: c.center.coordinates[0],
+          lat: c.center.coordinates[1]
+        };
+        els.radius.value = String(c.radius_km);
+        showCenterChip();
+      }
     }
 
     function showImportMsg(kind, text) {
@@ -628,8 +552,6 @@
         applyParsed(data.parsed || {});
         showImportMsg('success', 'Filters imported from URL.');
         els.importUrl.value = '';
-      } catch {
-        showImportMsg('error', 'Could not contact bot service to parse URL.');
       } finally {
         els.importBtn.disabled = false;
       }
@@ -640,21 +562,19 @@
 
     function buildConfig() {
       const radiusVal = intOrNull(els.radius.value);
-      const hasRadius = radiusVal !== null && radiusVal > 0 && !!centerSelected;
+      const hasRadius = radiusVal !== null && radiusVal > 0 && !!centerSelected && !!centerSelected.id;
       return {
         category_main_cb: els.prop.value ? parseInt(els.prop.value, 10) : null,
         category_type_cb: els.trans.value ? parseInt(els.trans.value, 10) : null,
         category_sub_cb: Array.from(dispoSelected),
         price_min: intOrNull(els.pmin.value),
         price_max: intOrNull(els.pmax.value),
-        city_contains: els.city.value.trim() || null,
+        region_id: hasRadius ? centerSelected.id : null,
         center: hasRadius
           ? { type: 'Point', coordinates: [centerSelected.lon, centerSelected.lat] }
           : null,
         radius_km: hasRadius ? radiusVal : null,
-        region_label: hasRadius ? (centerSelected.label || null) : null,
-        title_keywords: csv(els.kw.value),
-        labels_any: csv(els.labels.value)
+        region_label: hasRadius ? (centerSelected.label || null) : null
       };
     }
 
@@ -676,10 +596,6 @@
     els.submit.addEventListener('click', async () => {
       clearFormMsg();
       const config = buildConfig();
-      // Single-call save. The bot persists the config row; on insert
-      // it also fires notify.bot.welcome (best-effort). The BFF parent
-      // is told via module:saved and is responsible for flipping the
-      // users.bots[] entry from "pending" to "active".
       if (isEmbedded) {
         els.submit.disabled = true;
         try {
@@ -695,8 +611,6 @@
             return;
           }
           window.parent.postMessage({ type: 'module:saved' }, PARENT_ORIGIN);
-        } catch {
-          showFormError('Could not save bot.');
         } finally {
           els.submit.disabled = false;
         }
@@ -714,8 +628,6 @@
             return;
           }
           showFormSuccess('Saved.');
-        } catch {
-          showFormError('Could not contact bot service.');
         } finally {
           els.submit.disabled = false;
         }
@@ -742,9 +654,6 @@
     }
 
     window.addEventListener('message', (e) => {
-      // Ignore messages from cross-origin senders. In embedded mode the
-      // BFF parent shares our origin (the iframe is loaded through the
-      // BFF reverse proxy at /modules/<bot>/...).
       if (e.origin !== PARENT_ORIGIN) return;
       const data = e.data;
       if (!data || typeof data !== 'object') return;

@@ -51,6 +51,12 @@ spec:
         podMonitorSelectorNilUsesHelmValues: false
         ruleSelectorNilUsesHelmValues: false
         probeSelectorNilUsesHelmValues: false
+        # Tempo's metrics-generator pushes service-graph + span-metrics
+        # samples to Prometheus via the remote_write API (see
+        # `flux/infra/prod/tempo.yaml`). The receiver is gated behind a
+        # feature flag in Prometheus 2.x / 3.x — without it the writes
+        # silently 404.
+        enableRemoteWriteReceiver: true
         resources:
           requests:
             cpu: 200m

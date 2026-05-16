@@ -1,0 +1,214 @@
+# Tempo — single-binary trace backend (the "what called what" half of
+# observability, complementing Prometheus' "what was happening" and
+# Loki's "what was logged"). Spans ingested via OTLP land here; Grafana
+# both renders the per-trace Gantt timeline (Jaeger-equivalent) and
+# turns them into a live service-graph node graph via Tempo's
+# `metrics_generator`, which remote-writes RED metrics + service-graph
+# edges into Prometheus.
+#
+# Sizing rationale: same shape as Loki — SingleBinary, local-path PVC,
+# 24 h retention. dp-reality's expected trace volume is a handful of
+# spans per scrape cycle (every 5–10 min) per bot plus one ingress hop
+# per user click; well under 1 GB / day even with verbose
+# instrumentation, so a single replica with 10 GiB of disk is fine.
+#
+# Ports the chart exposes on the `tempo` Service:
+#   3200/tcp  Tempo HTTP API (query API, used by Grafana)
+#   4317/tcp  OTLP gRPC receiver (preferred for SDKs / Beyla)
+#   4318/tcp  OTLP HTTP receiver
+#   14250    Jaeger gRPC, 14268 Jaeger Thrift-HTTP, 9411 Zipkin (chart defaults; kept open for back-compat)
+#
+# Workload pods in `dp-reality/` will need a NetworkPolicy egress rule
+# to `tracing/tempo:4317` once they're instrumented. The instrumentation
+# itself (OpenTelemetry SDK auto-instrumentation per service) is a
+# separate change; deploying Tempo first means "spans show up the
+# moment you turn the SDKs on" without an infra round-trip.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: tracing
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: tempo
+      version: 2.x.x
+      sourceRef:
+        kind: HelmRepository
+        name: grafana-community
+        namespace: flux-system
+      interval: 1h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    replicas: 1
+    persistence:
+      enabled: true
+      storageClassName: local-path
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 768Mi
+    tempo:
+      # 7 days matches Prometheus and Loki retention so the three views
+      # stay in sync when troubleshooting an incident from any direction.
+      retention: 168h
+      reportingEnabled: false
+      multitenancyEnabled: false
+      # Memory ballast tuned down from the 1 GiB chart default; our
+      # ingest rate is two orders of magnitude lower than the chart's
+      # assumed scale.
+      memBallastSizeMbs: 128
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+        # Jaeger / Zipkin receivers omitted — every SDK we plan to use
+        # speaks OTLP natively, and dropping the unused listeners
+        # shrinks the attack surface and the listening-port count.
+      storage:
+        trace:
+          backend: local
+          local:
+            path: /var/tempo/traces
+          wal:
+            path: /var/tempo/wal
+      # ---- Metrics generator ----
+      # Turns every ingested span into two Prometheus-shaped feeds:
+      #
+      #   1. service_graph_*  — `(client, server)` pair metrics, the
+      #      raw material for Grafana's Node Graph panel that draws the
+      #      "bot → rabbitmq → email-notifier → mongodb" picture.
+      #   2. traces_spanmetrics_* — per-service RED metrics (rate,
+      #      errors, duration) used by Grafana's "APM" / "Service
+      #      Graph view" tables.
+      #
+      # Both are remote-written into the kube-prometheus-stack
+      # Prometheus, which has `enableRemoteWriteReceiver` enabled in
+      # `prometheus.yaml`.
+      metricsGenerator:
+        enabled: true
+        remoteWriteUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+        processor:
+          service_graphs:
+            wait: 10s
+            max_items: 10000
+            dimensions:
+              # Surface namespace + pod on every edge so the Node Graph
+              # panel can colour-code by app and link back to Loki on
+              # click via the trace-to-logs config below.
+              - k8s.namespace.name
+              - k8s.pod.name
+          span_metrics:
+            # `target_info` adds a once-per-service info series carrying
+            # the resource attributes (service.version, deployment.env,
+            # …). Grafana joins on it to label the graph nicely.
+            enable_target_info: true
+        registry:
+          collection_interval: 15s
+          external_labels:
+            cluster: dp-reality
+        storage:
+          path: /var/tempo/generator-blocks
+        traces_storage:
+          path: /var/tempo/generator-wal
+      # Per-tenant override that flips the two processors on; without
+      # this the generator is built into the binary but receives no
+      # spans.
+      overrides:
+        defaults:
+          metrics_generator:
+            processors:
+              - service-graphs
+              - span-metrics
+      server:
+        http_listen_port: 3200
+    # Don't expose Tempo's HTTP API on a NodePort/Ingress; everything
+    # that needs it (Grafana, in-cluster instrumentation) talks via
+    # cluster DNS. Tracing data is at least as sensitive as logs.
+    service:
+      type: ClusterIP
+    # Surface Tempo's own /metrics endpoint to Prometheus so the
+    # operator can monitor ingest rate, span drops, and remote_write
+    # back-pressure.
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+---
+# Auto-discovered Grafana datasource for Tempo, mirroring the
+# `loki-datasource` ConfigMap pattern. The kube-prometheus-stack
+# Grafana sidecar has `sidecar.datasources.searchNamespace=ALL`
+# (see `prometheus.yaml`), so this ConfigMap is picked up regardless
+# of which namespace it lives in.
+#
+# `tracesToLogsV2` makes every span row in Grafana clickable to jump
+# straight to the matching Loki logs of the same pod in the same time
+# window — the "single pane of glass" feature the thesis can cite as
+# the practical payoff of co-locating Tempo with the existing Loki.
+#
+# `serviceMap.datasourceUid: prometheus` and `nodeGraph.enabled: true`
+# turn on the Grafana "Service Graph" view: the auto-generated node
+# graph + RED metrics table built from `service_graph_*` /
+# `traces_spanmetrics_*` that the generator is writing into Prometheus.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-datasource
+  namespace: tracing
+  labels:
+    grafana_datasource: "1"
+data:
+  tempo.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.tracing.svc.cluster.local:3200
+        isDefault: false
+        jsonData:
+          httpMethod: GET
+          # The Prometheus datasource provisioned by kube-prometheus-stack
+          # uses the literal uid "prometheus"; Loki's uid is the one
+          # currently visible in Grafana's API at /api/datasources.
+          tracesToLogsV2:
+            datasourceUid: P8E80F9AEF21F6940
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: true
+            filterBySpanID: false
+            tags:
+              - key: service.name
+                value: app
+              - key: k8s.namespace.name
+                value: namespace
+              - key: k8s.pod.name
+                value: pod
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: -2m
+            spanEndTimeShift: 2m
+            tags:
+              - key: service.name
+                value: service
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          search:
+            hide: false
+          spanBar:
+            type: Tag
+            tag: http.path

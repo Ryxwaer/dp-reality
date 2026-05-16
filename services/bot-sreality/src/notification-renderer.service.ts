@@ -43,15 +43,11 @@ function formatLabels(labels: string[]): string {
   return `<div style="margin-top:8px">${chips}</div>`;
 }
 
-/**
- * Anchor-free by contract: the returned HTML carries only the visual
- * content (title, property label, price, locality, labels). The
- * listing URL stays on the structured `url` field of the notification
- * row; each consumer (email envelope, inbox detail view) wraps the
- * whole card in a single tile-wide <a> tied to that URL. Embedding an
- * inner <a> here would cause HTML5 parsers to close the outer wrapper
- * implicitly, collapsing the tile click area to just the inner link.
- */
+// Anchor-free by contract: the returned HTML carries only the visual
+// content. The listing URL stays on the structured `url` field of the
+// notification row; each consumer wraps the whole card in a single
+// tile-wide <a>. Embedding an inner <a> here would cause HTML5 parsers
+// to close the outer wrapper, collapsing the tile click area.
 @Injectable()
 export class NotificationRendererService {
   renderCard(listing: Listing): string {

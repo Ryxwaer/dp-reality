@@ -75,14 +75,6 @@ function summariseFilter(cfg: SrealityBotConfig): string {
   if (cfg.center && cfg.radius_km && cfg.radius_km > 0) {
     const where = cfg.region_label?.trim() || 'selected area';
     parts.push(`within ${cfg.radius_km} km (${where})`);
-  } else if (cfg.city_contains) {
-    parts.push(`in ${cfg.city_contains}`);
-  }
-  if (cfg.title_keywords?.length) {
-    parts.push('matching ' + cfg.title_keywords.map((k) => `"${k}"`).join(', '));
-  }
-  if (cfg.labels_any?.length) {
-    parts.push('with labels ' + cfg.labels_any.map((l) => `"${l}"`).join(', '));
   }
 
   return parts.join(' \u00b7 ');
@@ -133,12 +125,6 @@ export class WelcomeService {
     private readonly publisher: PublisherService,
   ) {}
 
-  // Emit one notify.bot.welcome event for a freshly-created
-  // configuration. The payload carries everything the email-notifier
-  // needs (subject + pre-rendered HTML); no notifications row is
-  // written. Fire-and-forget by design: the welcome email is a courtesy
-  // and must not block configuration creation if RabbitMQ or Mongo is
-  // briefly unavailable.
   async emit(input: {
     userId: string;
     configId: string;
@@ -146,18 +132,9 @@ export class WelcomeService {
     cfg: SrealityBotConfig;
   }): Promise<void> {
     let matchingCount = 0;
-    try {
-      // Run the matcher in-process against the listings the scraper has
-      // already stored — single-source the "is this a match?" decision
-      // instead of duplicating it as a Mongo query.
-      const all = await this.repository.fetchAllListings();
-      for (const listing of all) {
-        if (this.matcher.matches(input.cfg, listing)) matchingCount += 1;
-      }
-    } catch (err) {
-      this.logger.warn(
-        `welcome: matching count failed for config ${input.configId}: ${(err as Error).message}`,
-      );
+    const all = await this.repository.fetchAllListings();
+    for (const listing of all) {
+      if (this.matcher.matches(input.cfg, listing)) matchingCount += 1;
     }
 
     const html = renderWelcomeCard({
@@ -167,21 +144,15 @@ export class WelcomeService {
     });
     const subject = `Your bot "${input.botName || 'Untitled bot'}" is now watching ${config.displayName}`;
 
-    try {
-      await this.publisher.publishBotWelcome({
-        userId: input.userId,
-        configId: input.configId,
-        botId: config.serviceId,
-        subject,
-        html,
-      });
-      this.logger.log(
-        `welcome: published for config ${input.configId} (user ${input.userId}, ${matchingCount} matching listings)`,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `welcome: publish failed for config ${input.configId}: ${(err as Error).message}`,
-      );
-    }
+    await this.publisher.publishBotWelcome({
+      userId: input.userId,
+      configId: input.configId,
+      botId: config.serviceId,
+      subject,
+      html,
+    });
+    this.logger.log(
+      `welcome: published for config ${input.configId} (user ${input.userId}, ${matchingCount} matching listings)`,
+    );
   }
 }
