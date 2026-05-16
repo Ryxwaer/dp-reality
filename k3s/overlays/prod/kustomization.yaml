@@ -18,7 +18,7 @@ images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
     newTag: main-95a89e88-1778945636 # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-bezrealitky
-    newTag: main-95a89e88-1778945634 # {"$imagepolicy": "flux-system:bot-bezrealitky:tag"}
+    newTag: main-e6da68bd-1778947502 # {"$imagepolicy": "flux-system:bot-bezrealitky:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
     newTag: main-95a89e88-1778945630 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/geo-cz
