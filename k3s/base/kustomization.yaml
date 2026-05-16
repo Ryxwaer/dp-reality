@@ -11,6 +11,7 @@ resources:
   - configmaps/bot-bezrealitky.yaml
   - configmaps/email-notifier.yaml
   - configmaps/frontend.yaml
+  - configmaps/geo-cz.yaml
 
   # SOPS-encrypted Secrets (cf. .sops.yaml at repo root). The Flux
   # Kustomization in flux/clusters/prod/apps.yaml carries the
@@ -21,6 +22,7 @@ resources:
   - secrets/bot-bezrealitky.yaml
   - secrets/email-notifier.yaml
   - secrets/frontend.yaml
+  - secrets/geo-cz.yaml
   - secrets/rabbitmq.yaml
   - secrets/mongodb.yaml
 
@@ -29,6 +31,7 @@ resources:
 
   - mongodb/statefulset.yaml
   - mongodb/service.yaml
+  - mongodb/service-tailscale.yaml
 
   - bot-bazos/deployment.yaml
   - bot-bazos/service.yaml
@@ -38,6 +41,9 @@ resources:
 
   - bot-bezrealitky/deployment.yaml
   - bot-bezrealitky/service.yaml
+
+  - geo-cz/deployment.yaml
+  - geo-cz/service.yaml
 
   - email-notifier/deployment.yaml
 
@@ -52,6 +58,7 @@ resources:
   - networkpolicies/allow-dns.yaml
   - networkpolicies/frontend.yaml
   - networkpolicies/bots.yaml
+  - networkpolicies/geo-cz.yaml
   - networkpolicies/email-notifier.yaml
   - networkpolicies/rabbitmq.yaml
   - networkpolicies/mongodb.yaml

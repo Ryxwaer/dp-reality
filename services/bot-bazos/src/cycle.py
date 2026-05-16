@@ -1,4 +1,3 @@
-"""End-to-end scrape → match → notify → emit cycle."""
 from __future__ import annotations
 
 import logging
@@ -8,11 +7,13 @@ from collections import defaultdict
 from typing import Iterable
 
 import aio_pika
+import httpx
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
 from . import matcher, notifications, publisher, repository, scraper
 from .config import settings
+from .geo_client import geo_client
 from .models import BotConfig, Listing
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,17 @@ async def run_cycle(
             os._exit(1)
 
 
+async def _resolve_allowed_pscs(cfg: BotConfig) -> set[str] | None:
+    """Pre-compute the set of PSČs that pass the (psc, radius_km) gate.
+
+    Returns None when the config doesn't enable radius filtering, in
+    which case the matcher falls back to (optional) exact-PSČ equality.
+    """
+    if not cfg.psc or not cfg.radius_km:
+        return None
+    return await geo_client.in_radius_by_psc(cfg.psc, cfg.radius_km)
+
+
 async def _match_and_notify(
     db: AsyncIOMotorDatabase,
     rabbitmq: aio_pika.RobustConnection,
@@ -70,10 +82,18 @@ async def _match_and_notify(
         except ValidationError as err:
             logger.warning("skip invalid config %s: %s", cfg_doc.get("_id"), err)
             continue
+        try:
+            allowed_pscs = await _resolve_allowed_pscs(cfg)
+        except httpx.HTTPError as err:
+            logger.error(
+                "geo-cz lookup failed for config %s (psc=%s, km=%s): %s — skipping this cycle",
+                cfg_doc.get("_id"), cfg.psc, cfg.radius_km, err,
+            )
+            continue
         config_id = str(cfg_doc["_id"])
         user_id = str(cfg_doc["user_id"])
         for listing in new_listings:
-            if matcher.matches(cfg, listing):
+            if matcher.matches(cfg, listing, allowed_pscs=allowed_pscs):
                 rows_by_user[user_id].append(
                     notifications.build_notification(
                         user_id=user_id,
@@ -84,9 +104,9 @@ async def _match_and_notify(
                 )
 
     # The repository upsert collapses two matching configs of the same
-    # user/bot/listing into a single row (config_ids[] tracks which
-    # configs hit). Emit exactly one notify.bot.processed per user for
-    # which at least one new row was created in this cycle.
+    # user/bot/listing into one row (config_ids[] tracks which configs
+    # hit). Emit exactly one notify.bot.processed per user for whom at
+    # least one row was newly inserted in this cycle.
     users_with_inserts: set[str] = set()
     for user_id, rows in rows_by_user.items():
         if not rows:
@@ -96,16 +116,9 @@ async def _match_and_notify(
             users_with_inserts.add(user_id)
 
     for user_id in users_with_inserts:
-        try:
-            await publisher.publish_bot_processed(
-                rabbitmq,
-                user_id=user_id,
-                bot_id=settings.service_id,
-                run_id=run_id,
-            )
-        except Exception as err:
-            # Notifications are persisted; the email notifier and SSE
-            # bridge will pick them up on the next event of any kind.
-            logger.warning(
-                "publish notify.bot.processed failed (rows persisted): %s", err
-            )
+        await publisher.publish_bot_processed(
+            rabbitmq,
+            user_id=user_id,
+            bot_id=settings.service_id,
+            run_id=run_id,
+        )

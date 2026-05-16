@@ -1,17 +1,3 @@
-"""MongoDB persistence for the Bazos bot service.
-
-Two private collections (per the bounded-context rule):
-  - listings_bazos:   raw scraped listings (analytics base + Bazos tail)
-  - bazos_config:     per-configuration documents (one row per
-                      user-owned configuration of this bot service;
-                      `_id` is the BFF-minted `config_id`)
-
-Plus shared writes to:
-  - notifications:    one row per (user, config, source_ref) match
-  - module_registry:  one-shot upsert on boot keyed by `bot_id`
-
-Nothing in this file reads from another bot service's collections.
-"""
 from __future__ import annotations
 
 import logging
@@ -48,10 +34,9 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await config.create_index("user_id", background=True)
     await config.create_index("active", background=True)
 
-    # The (user_id, bot_id, source_ref) unique index is owned jointly
-    # by everyone writing into `notifications`; we declare it here so
-    # the bot service can boot against a pristine DB without racing the
-    # BFF index plugin.
+    # The (user_id, bot_id, source_ref) unique index is co-owned by every
+    # writer of `notifications`; declared here so the bot can boot
+    # against a pristine DB without racing the BFF index plugin.
     notifications = db[NOTIFICATIONS_COLLECTION]
     await notifications.create_index(
         [("user_id", ASCENDING), ("bot_id", ASCENDING), ("source_ref", ASCENDING)],
@@ -66,6 +51,36 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     )
 
     logger.info("Indexes ensured (listings_bazos, bazos_config, notifications)")
+
+
+async def migrate(db: AsyncIOMotorDatabase) -> None:
+    """One-shot schema migrations. Safe to run on every boot."""
+    # Removed: `district` field on listings_bazos (was computed from PSČ
+    # prefix but never read by the matcher).
+    res = await db[LISTINGS_COLLECTION].update_many(
+        {"district": {"$exists": True}},
+        {"$unset": {"district": ""}},
+    )
+    if res.modified_count:
+        logger.info("migrate: stripped `district` from %d listings", res.modified_count)
+    try:
+        await db[LISTINGS_COLLECTION].drop_index("district_1")
+        logger.info("migrate: dropped index district_1")
+    except Exception:  # noqa: BLE001
+        # Index might never have existed (fresh DB). Drop is idempotent.
+        pass
+
+    # Removed: `city_contains` and `psc_prefix` from config docs (replaced
+    # by `psc` + `radius_km` resolved via the geo-cz service).
+    res = await db[CONFIG_COLLECTION].update_many(
+        {"$or": [
+            {"config.city_contains": {"$exists": True}},
+            {"config.psc_prefix": {"$exists": True}},
+        ]},
+        {"$unset": {"config.city_contains": "", "config.psc_prefix": ""}},
+    )
+    if res.modified_count:
+        logger.info("migrate: stripped legacy config fields from %d configs", res.modified_count)
 
 
 async def upsert_listings(
@@ -97,8 +112,6 @@ async def upsert_listings(
     result = await db[LISTINGS_COLLECTION].bulk_write(operations, ordered=False)
     inserted_ids = set(result.upserted_ids.values())
 
-    # `bulk_write` reports inserted docs only by their _id; we re-fetch
-    # them to get the source_id we need for matching downstream.
     if not inserted_ids:
         logger.info(
             "Upserted %d listings: 0 new, %d updated (run %s)",
@@ -108,6 +121,8 @@ async def upsert_listings(
         )
         return []
 
+    # bulk_write reports inserted docs only by _id; re-fetch to get the
+    # source_ids we need to filter the in-memory listings list.
     cursor = db[LISTINGS_COLLECTION].find({"_id": {"$in": list(inserted_ids)}})
     new_docs = await cursor.to_list(length=None)
     new_source_ids = {d["source_id"] for d in new_docs}
@@ -160,10 +175,6 @@ async def write_config(
 
 
 async def mark_welcome_sent(db: AsyncIOMotorDatabase, config_id: str) -> None:
-    """Audit-only stamp recorded after a successful welcome publish.
-    Nothing in the platform reads this back; it lives on the row purely
-    to make 'did this user get welcomed?' answerable from mongosh.
-    """
     await db[CONFIG_COLLECTION].update_one(
         {"_id": config_id},
         {"$set": {"welcome_sent_at": datetime.now(UTC)}},
@@ -175,9 +186,9 @@ async def insert_notifications(
 ) -> int:
     """Idempotent upsert keyed on (user_id, bot_id, source_ref).
 
-    A second matching configuration of the same user does NOT create a
-    duplicate row — it grows the existing row's `config_ids` array via
-    `$addToSet`. Returns the number of newly created rows.
+    A second matching configuration of the same user grows the existing
+    row's `config_ids` array via `$addToSet` instead of creating a
+    duplicate. Returns the number of newly created rows.
     """
     if not rows:
         return 0
@@ -212,15 +223,6 @@ async def insert_notifications(
 
 
 async def upsert_registry(db: AsyncIOMotorDatabase) -> None:
-    """One-shot self-registration on boot.
-
-    The platform contract treats the registry as a published catalogue:
-    once a service has advertised itself, it stays listed. There is no
-    heartbeat, no `last_seen`, and no manifest of internal scheduling
-    state — those concerns live inside the bot service. The row is
-    keyed by `bot_id`, which doubles as the compose / k8s service name
-    and the URL slug under /modules/<bot_id>/* on the BFF.
-    """
     await db[MODULE_REGISTRY_COLLECTION].update_one(
         {"bot_id": settings.service_id},
         {

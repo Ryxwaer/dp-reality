@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: geo-cz
+  namespace: dp-reality
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: geo-cz
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Bot services consume the geo lookups during their scrape/match
+    # cycles. BFF reaches it for city autocomplete in the configure
+    # iframe (reverse-proxied via /modules/<bot>/* helpers).
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/component: bot } }
+        - podSelector: { matchLabels: { app.kubernetes.io/component: bff } }
+      ports:
+        - { protocol: TCP, port: 8000 }
+  egress:
+    # The bundled GeoNames file is seeded into Mongo on boot; from then
+    # on every lookup is a Mongo query.
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: mongodb } }
+      ports:
+        - { protocol: TCP, port: 27017 }

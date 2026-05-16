@@ -1,20 +1,3 @@
-"""RabbitMQ publishers for bot-emitted events.
-
-Two fanout exchanges, two contracts:
-  - notify.bot.processed: a scrape cycle finished and produced at
-    least one notification row for `user_id` across one-or-more of
-    that user's configs in this bot service. Emitted exactly once per
-    (user, bot, run); the payload is a pointer tuple
-    ({user_id, bot_id, run_id}) and consumers read the actual rows
-    from the shared notifications collection. Per-config grouping is
-    a downstream concern — bot services intentionally do not emit one
-    event per config because the cycle, not the config, is what
-    completed.
-  - notify.bot.welcome: a brand-new configuration has been saved.
-    Payload is event-carried state — it includes the bot-rendered
-    HTML welcome card and a subject line, so the email-notifier never
-    needs to look up listings or templates.
-"""
 from __future__ import annotations
 
 import json
@@ -23,6 +6,12 @@ from typing import Any
 
 import aio_pika
 
+# Two fanout exchanges with distinct payload contracts:
+#   notify.bot.processed — pointer tuple {user_id, bot_id, run_id};
+#       emitted at most once per (user, bot, run); consumers read
+#       freshly-written rows from the shared `notifications` collection.
+#   notify.bot.welcome   — event-carried state, includes (subject, html);
+#       email-notifier sends immediately, never touches notifications.
 EXCHANGE_PROCESSED = "notify.bot.processed"
 EXCHANGE_WELCOME = "notify.bot.welcome"
 
@@ -59,9 +48,7 @@ async def publish_bot_processed(
     await _publish(connection, EXCHANGE_PROCESSED, payload)
     logger.debug(
         "Published notify.bot.processed user=%s bot=%s run=%s",
-        user_id,
-        bot_id,
-        run_id,
+        user_id, bot_id, run_id,
     )
 
 
@@ -72,6 +59,5 @@ async def publish_bot_welcome(
     await _publish(connection, EXCHANGE_WELCOME, payload)
     logger.debug(
         "Published notify.bot.welcome user=%s config=%s",
-        payload.get("user_id"),
-        payload.get("config_id"),
+        payload.get("user_id"), payload.get("config_id"),
     )

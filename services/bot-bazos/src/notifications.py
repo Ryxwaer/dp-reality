@@ -1,21 +1,3 @@
-"""Bot-authored notification card composition.
-
-Each match becomes one row in the shared `notifications` collection.
-The row carries:
-  - structured fields (title, url, source_ref) used by the inbox list
-    view and by the BFF's deduplication;
-  - a self-contained HTML card (`html`) — the *visual* content of the
-    notification (title, price, locality, labels, description). The
-    listing URL is intentionally NOT embedded as an anchor inside
-    this HTML: each consumer (email envelope, inbox detail view) wraps
-    the whole card in a single tile-wide <a> using the structured
-    `url` field. Nesting another <a> here would make HTML5 parsers
-    collapse the outer wrapper, breaking the tile click target.
-
-The HTML uses inline styles only — required because email clients
-ignore external stylesheets — and adheres to the platform's HTML
-conventions document (max width 600px, image cap 480px, neutral palette).
-"""
 from __future__ import annotations
 
 import html as html_lib
@@ -23,6 +5,11 @@ from typing import Any
 
 from .models import Listing
 
+# Anchor-free contract: the listing URL is intentionally NOT embedded
+# as an <a> inside this HTML. Each consumer (email envelope, inbox
+# detail) wraps the entire card in one tile-wide <a> using the
+# structured `url` field; nesting another <a> would make HTML5 parsers
+# collapse the outer wrapper and break the tile click target.
 
 _PRICE_LABELS = {"sale": "Sale", "rent": "Rent / mo"}
 _PROPERTY_LABELS = {
@@ -56,11 +43,6 @@ def _format_locality(listing: Listing) -> str:
 
 
 def render_card(listing: Listing) -> str:
-    """Return the inline-styled HTML card for one matched listing.
-
-    Anchor-free by contract: the consumer wraps the returned HTML in a
-    single tile-wide <a>. See module docstring.
-    """
     title = _esc(listing.title) or "(untitled listing)"
     locality = _esc(_format_locality(listing))
     property_label = _esc(_PROPERTY_LABELS.get(listing.property_type.value, ""))
@@ -94,12 +76,6 @@ def render_card(listing: Listing) -> str:
 def build_notification(
     *, user_id: str, bot_id: str, config_id: str, listing: Listing
 ) -> dict[str, Any]:
-    """Compose the per-match payload consumed by `insert_notifications`.
-
-    Only the identifying + rendered fields are returned; the repository
-    layer is responsible for `$setOnInsert` of `created_at`/`unread`/
-    `sent_at` and the `$addToSet` on `config_ids`.
-    """
     return {
         "user_id": user_id,
         "bot_id": bot_id,

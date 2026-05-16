@@ -14,10 +14,20 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
-                values: [bot, bff, notifier]
+                values: [bot, bff, notifier, geo]
         # Phase 1 has one Mongo member; future replica-set members
         # need this self-allow to elect a primary.
         - podSelector: { matchLabels: { app.kubernetes.io/name: mongodb } }
+      ports:
+        - { protocol: TCP, port: 27017 }
+    # Tailnet ingress: the Tailscale operator runs proxy pods in the
+    # `tailscale` namespace (one per exposed Service); they forward
+    # traffic from tailnet clients into the cluster. Mongo auth is
+    # already enforced by the root credentials in the `mongodb` Secret.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
       ports:
         - { protocol: TCP, port: 27017 }
   egress:

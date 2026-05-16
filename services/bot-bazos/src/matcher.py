@@ -1,10 +1,3 @@
-"""Per-user matching for Bazos.
-
-The matcher uses native Python types and operators on the listing fields
-this bot service itself wrote into `listings_bazos`. It is deliberately
-not a portable DSL: the platform's whole point is that the matcher's
-shape is owned by the bot service and never leaves it.
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -21,7 +14,23 @@ def _matches_keyword(text: str | None, keywords: list[str]) -> bool:
     return all(k.lower() in haystack for k in keywords)
 
 
-def matches(config: BotConfig, listing: Listing) -> bool:
+def matches(
+    config: BotConfig,
+    listing: Listing,
+    *,
+    allowed_pscs: set[str] | None = None,
+) -> bool:
+    """Decide whether a listing should produce a notification for this config.
+
+    `allowed_pscs` is the precomputed set of PSČs returned by
+    geo-cz `/in-radius` for `(config.psc, config.radius_km)`. The matcher
+    is intentionally sync and HTTP-free; the cycle resolves the radius
+    upstream so it pays the network cost once per (config, cycle).
+
+    Fail-closed on the radius filter: if the user asked for a radius and
+    the listing has no PSČ, we cannot prove inclusion and refuse to
+    notify. Same posture as `bot-sreality` for GPS-less listings.
+    """
     if config.category_main and listing.category_main != config.category_main:
         return False
     if config.category_sub and listing.category_sub != config.category_sub:
@@ -32,12 +41,11 @@ def matches(config: BotConfig, listing: Listing) -> bool:
     if config.price_max is not None:
         if listing.price is None or listing.price > config.price_max:
             return False
-    if config.city_contains:
-        haystack = (listing.city or "").lower()
-        if config.city_contains.lower() not in haystack:
+    if allowed_pscs is not None:
+        if not listing.psc or listing.psc not in allowed_pscs:
             return False
-    if config.psc_prefix:
-        if not (listing.psc and listing.psc.startswith(config.psc_prefix)):
+    elif config.psc and not config.radius_km:
+        if listing.psc != config.psc:
             return False
     if not _matches_keyword(listing.title, config.title_keywords):
         return False

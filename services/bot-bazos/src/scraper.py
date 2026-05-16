@@ -1,11 +1,3 @@
-"""Bazos list-page scraper.
-
-Walks the (transaction × property) matrix of category landing pages and
-returns deduplicated `Listing` objects normalised to the platform's
-analytics base schema. Source-specific fields (category_*, psc,
-description, locality_raw) are kept on the document so the matcher and
-notification renderer can use them without a second fetch.
-"""
 from __future__ import annotations
 
 import logging
@@ -21,6 +13,9 @@ from .models import Listing, PriceType, PropertyType
 
 BASE_URL = "https://reality.bazos.cz/"
 _INZERAT_ID_RE = re.compile(r"^/inzerat/(\d+)/")
+# City and PSČ often run together in the locality string ("Jičín508 01"),
+# so the PSČ is anchored at the end of the trimmed value.
+_PSC_PATTERN = re.compile(r"(\d{3})\s*(\d{2})\s*$")
 
 HEADERS = {
     "User-Agent": (
@@ -51,9 +46,6 @@ _CATEGORY_SUB_TO_PROPERTY: dict[str, PropertyType] = {
     "chalupa": PropertyType.OTHER,
     "ostatni": PropertyType.OTHER,
 }
-
-# Czech PSČ anchored at the end: city and PSČ often run together ("Jičín508 01").
-_PSC_PATTERN = re.compile(r"(\d{3})\s*(\d{2})\s*$")
 
 
 @dataclass(frozen=True)
@@ -94,12 +86,6 @@ def _parse_locality(raw: str) -> tuple[str | None, str | None]:
     return city, psc
 
 
-def _district_from_psc(psc: str | None) -> str | None:
-    # PSC's first three digits identify the okres (district code) in CZ.
-    # Used by the analytics base schema; the bot itself doesn't need it.
-    return psc[:3] if psc and len(psc) >= 3 else None
-
-
 def _text(element: Tag | None) -> str:
     return element.get_text(strip=True) if element else ""
 
@@ -137,7 +123,6 @@ def _parse_listing(element: Tag, cursor: _CategoryCursor) -> Listing | None:
         price=_parse_price(price_raw),
         price_type=cursor.price_type,
         city=city,
-        district=_district_from_psc(psc),
         source_url=BASE_URL.rstrip("/") + href,
         source_id=source_id,
         description=description,
@@ -170,17 +155,13 @@ async def _scrape_category(
     collected: list[Listing] = []
     for page in range(pages):
         url = _category_page_url(cursor, page)
-        try:
-            response = await client.get(url)
-        except httpx.HTTPError as exc:
-            logger.warning("HTTP error on %s, skipping: %s", url, exc)
-            break
+        response = await client.get(url)
+        # 404 is the end-of-pagination signal for a category that has
+        # fewer than `pages * 20` listings; everything else is a real
+        # failure and bubbles up to the cycle's restart counter.
         if response.status_code == 404:
-            logger.debug("Category %s/%s returned 404", cursor.category_main, cursor.category_sub)
             break
-        if response.status_code != 200:
-            logger.warning("Non-200 on %s (%d)", url, response.status_code)
-            break
+        response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
         items = soup.find_all(class_="inzeraty")

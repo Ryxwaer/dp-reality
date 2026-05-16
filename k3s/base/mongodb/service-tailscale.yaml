@@ -1,0 +1,31 @@
+# Secondary Service that exposes the Mongo StatefulSet on the tailnet.
+#
+# The primary `mongodb` Service is headless (clusterIP: None) so the
+# replica-set members can address each other by stable per-pod DNS
+# (mongodb-0.mongodb, mongodb-1.mongodb, …). The Tailscale operator
+# proxies to a Service's ClusterIP, which a headless Service does not
+# have, so we keep the headless one for intra-cluster gossip and add
+# this regular ClusterIP variant purely for tailnet ingress.
+#
+# Both Services select the same pods, so the data is identical;
+# tailnet clients can reach Mongo at `mongodb.<tailnet>.ts.net` (or
+# just `mongodb` with MagicDNS) using the standard root credentials
+# from the `mongodb` Secret.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-tailscale
+  namespace: dp-reality
+  labels:
+    app.kubernetes.io/part-of: dp-reality
+    app.kubernetes.io/component: db
+    app.kubernetes.io/name: mongodb
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: "mongodb"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mongodb
+  ports:
+    - { name: mongo, port: 27017, targetPort: 27017, protocol: TCP }

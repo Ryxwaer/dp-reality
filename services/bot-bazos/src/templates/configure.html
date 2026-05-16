@@ -7,9 +7,8 @@
   <link rel="preconnect" href="https://rsms.me/" />
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
   <style>
-    /* Tokens chosen to mirror the Nuxt UI app shell (zinc neutral +
-       green-500 primary). Body bg is transparent in embedded mode so
-       the parent's modal surface shows through. */
+    /* Tokens mirror the Nuxt UI app shell (zinc + green-500). Body bg
+       is transparent in embedded mode so the parent modal shows through. */
     :root {
       color-scheme: light;
       --bg: #ffffff;
@@ -115,17 +114,6 @@
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
     .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--primary-soft); }
 
-    .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .switch .slider { position: absolute; inset: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; transition: background .12s; }
-    .switch .slider::before { content: ""; position: absolute; left: 1px; top: 1px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: transform .12s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-    .switch input:checked + .slider { background: var(--primary); border-color: var(--primary); }
-    .switch input:checked + .slider::before { transform: translateX(16px); }
-
-    .row-flex { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    .row-flex > div:first-child { flex: 1; }
-    .row-flex label { margin-bottom: 2px; }
-
     .footer {
       display: flex; gap: 8px; justify-content: flex-end;
       padding-top: 14px;
@@ -139,38 +127,28 @@
 
     .field-row { display: flex; gap: 8px; align-items: stretch; }
     .field-row .input { flex: 1; }
+
+    .suggest-wrap { position: relative; }
+    .suggest-list {
+      position: absolute; left: 0; right: 0; top: calc(100% + 2px);
+      background: var(--bg); border: 1px solid var(--border-strong);
+      border-radius: var(--radius); z-index: 10; max-height: 240px; overflow: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .suggest-item { padding: 8px 11px; cursor: pointer; font-size: 13px; }
+    .suggest-item:hover, .suggest-item[aria-selected="true"] { background: var(--surface-2); }
+    .suggest-item .sub { color: var(--text-muted); font-size: 12px; margin-left: 6px; }
   </style>
 </head>
 <body>
   <div class="stack" id="root">
-    <div class="card stack" id="general-card">
-      <div>
-        <h3>General</h3>
-        <p class="desc">How the bot is named in your dashboard and whether it sends digest emails.</p>
-      </div>
-      <div>
-        <label for="name">Name</label>
-        <input id="name" class="input" placeholder="e.g. Brno apartments under 5M" maxlength="100" />
-      </div>
-      <div class="row-flex">
-        <div>
-          <label>Email digest</label>
-          <span class="help-inline">Send a digest email when this bot finds new matches.</span>
-        </div>
-        <label class="switch">
-          <input id="email" type="checkbox" />
-          <span class="slider" aria-hidden="true"></span>
-        </label>
-      </div>
-    </div>
-
     <div class="card stack">
       <div>
         <h3>Quick import</h3>
         <p class="desc">Paste any reality.bazos.cz filter URL and we&rsquo;ll fill the form below.</p>
       </div>
       <div class="field-row">
-        <input id="import-url" class="input" type="url" placeholder="https://reality.bazos.cz/prodej/byt/?…" />
+        <input id="import-url" class="input" type="url" placeholder="https://reality.bazos.cz/prodam/byt/?…" />
         <button id="import-btn" type="button" class="btn">Import</button>
       </div>
       <div id="import-msg" class="help-inline" aria-live="polite"></div>
@@ -179,15 +157,15 @@
     <div class="card stack">
       <div>
         <h3>Filters</h3>
-        <p class="desc">Empty fields = wildcard.</p>
+        <p class="desc">Every field here matches exactly one bazos.cz URL parameter. Empty&nbsp;=&nbsp;no constraint.</p>
       </div>
       <div class="grid-2">
         <div>
           <label for="trans">Transaction</label>
           <select id="trans" class="select">
             <option value="">Any</option>
-            <option value="prodam">Sale</option>
-            <option value="pronajmu">Rent</option>
+            <option value="prodam">Sale (prodám)</option>
+            <option value="pronajmu">Rent (pronajmu)</option>
           </select>
         </div>
         <div>
@@ -219,19 +197,25 @@
         </div>
       </div>
       <div class="grid-2">
-        <div>
-          <label for="city">City contains</label>
-          <input id="city" class="input" placeholder="e.g. Brno" />
+        <div class="suggest-wrap">
+          <label for="city">City</label>
+          <input id="city" class="input" placeholder="e.g. Brno" autocomplete="off" />
+          <div id="city-suggest" class="suggest-list" hidden role="listbox"></div>
+          <span class="help-inline">Resolved to a PSČ via the geo service.</span>
         </div>
         <div>
-          <label for="psc">PSČ starts with</label>
-          <input id="psc" class="input" placeholder="e.g. 60" maxlength="5" />
-          <span class="help-inline">e.g. 60 covers Brno.</span>
+          <label for="psc">PSČ (or override city)</label>
+          <input id="psc" class="input" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="e.g. 60200" />
         </div>
       </div>
       <div>
+        <label for="radius">Radius (km from PSČ)</label>
+        <input id="radius" class="input" type="number" min="1" max="200" placeholder="—" />
+        <span class="help-inline">Requires PSČ. Empty&nbsp;=&nbsp;exact-PSČ match.</span>
+      </div>
+      <div>
         <label for="kw">Title must contain</label>
-        <input id="kw" class="input" placeholder="e.g. balkon, lodzie" />
+        <input id="kw" class="input" placeholder="e.g. 1+kk, balkon" />
         <span class="help-inline">Comma-separated. All keywords must appear in the title (case-insensitive).</span>
       </div>
     </div>
@@ -248,37 +232,25 @@
   (function () {
     'use strict';
 
-    // URL contract is intentionally tiny: only config_id (always) and
-    // user_id (only in standalone — the BFF reverse proxy injects it
-    // from the session in embedded mode). Everything else (name, email
-    // pref, theme) is BFF-owned and lives outside the iframe.
     const params = new URLSearchParams(location.search);
     const configId = params.get('config_id') || '';
     const userId = params.get('user_id') || '';
 
     const isEmbedded = window.parent && window.parent !== window;
     const PARENT_ORIGIN = window.location.origin;
-    // Default theme follows the OS; the BFF parent overrides via the
-    // module:set-theme postMessage handler below.
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
     }
     if (!isEmbedded) {
       document.documentElement.classList.add('standalone');
     }
-    // The General card (name + email pref) is BFF-owned; the iframe
-    // never collects or shows it, regardless of embedding mode.
-    document.getElementById('general-card').hidden = true;
 
     let isEditMode = false;
 
-    // Same-origin double-submit CSRF: the BFF set a `csrf-token` cookie
-    // (non-HttpOnly) on the user's session; for every state-changing
-    // call through the /modules/* reverse proxy we echo it back as a
-    // header so the BFF middleware can compare against the server-side
-    // value. Standalone mode hits the bot directly on its own port,
-    // skipping the BFF — the cookie is absent there and the header is
-    // simply omitted.
+    // Same-origin double-submit CSRF: the BFF sets a `csrf-token`
+    // cookie (non-HttpOnly) on the session; we echo it for every
+    // state-changing call through /modules/*. Standalone mode hits the
+    // bot directly and skips this entirely.
     function csrfHeaders() {
       var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
       return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
@@ -291,6 +263,8 @@
       return out;
     }
 
+    const apiBase = isEmbedded ? '/modules/bot-bazos' : '';
+
     const els = {
       importUrl: document.getElementById('import-url'),
       importBtn: document.getElementById('import-btn'),
@@ -300,7 +274,9 @@
       pmin: document.getElementById('pmin'),
       pmax: document.getElementById('pmax'),
       city: document.getElementById('city'),
+      citySuggest: document.getElementById('city-suggest'),
       psc: document.getElementById('psc'),
+      radius: document.getElementById('radius'),
       kw: document.getElementById('kw'),
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
@@ -319,41 +295,37 @@
       if (typeof p.category_sub === 'string') els.prop.value = p.category_sub;
       if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
       if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
-      if (typeof p.psc_prefix === 'string') els.psc.value = p.psc_prefix;
+      if (typeof p.psc === 'string') els.psc.value = p.psc;
+      if (typeof p.radius_km === 'number') els.radius.value = String(p.radius_km);
       if (typeof p.title_keywords === 'string') els.kw.value = p.title_keywords;
-      if (typeof p.city_contains === 'string') els.city.value = p.city_contains;
     }
 
     async function loadExisting() {
       if (!configId) return;
-      try {
-        // Standalone needs explicit user_id (from URL); embedded gets
-        // it injected by the BFF reverse proxy from the session cookie.
-        const url = isEmbedded
-          ? '/modules/bot-bazos/configs/' + configId
-          : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
-        const res = await fetch(url, { credentials: 'same-origin' });
-        // 404 means create-mode (config_id was minted by the BFF but
-        // the bot has never seen it before). Anything else (200) is
-        // edit-mode and we prefill from the stored payload.
-        if (res.status === 404) {
-          isEditMode = false;
-          els.submit.textContent = 'Create bot';
-          return;
-        }
-        if (!res.ok) return;
-        const doc = await res.json();
-        isEditMode = true;
-        els.submit.textContent = 'Save changes';
-        const c = doc.config || {};
-        if (c.category_main) els.trans.value = c.category_main;
-        if (c.category_sub) els.prop.value = c.category_sub;
-        if (c.price_min != null) els.pmin.value = String(c.price_min);
-        if (c.price_max != null) els.pmax.value = String(c.price_max);
-        if (c.city_contains) els.city.value = c.city_contains;
-        if (c.psc_prefix) els.psc.value = c.psc_prefix;
-        if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
-      } catch {}
+      const url = isEmbedded
+        ? apiBase + '/configs/' + configId
+        : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (res.status === 404) {
+        isEditMode = false;
+        els.submit.textContent = 'Create bot';
+        return;
+      }
+      if (!res.ok) {
+        showFormError('Failed to load existing config: HTTP ' + res.status);
+        return;
+      }
+      const doc = await res.json();
+      isEditMode = true;
+      els.submit.textContent = 'Save changes';
+      const c = doc.config || {};
+      if (c.category_main) els.trans.value = c.category_main;
+      if (c.category_sub) els.prop.value = c.category_sub;
+      if (c.price_min != null) els.pmin.value = String(c.price_min);
+      if (c.price_max != null) els.pmax.value = String(c.price_max);
+      if (c.psc) els.psc.value = c.psc;
+      if (c.radius_km != null) els.radius.value = String(c.radius_km);
+      if (Array.isArray(c.title_keywords)) els.kw.value = c.title_keywords.join(', ');
     }
 
     function showImportMsg(kind, text) {
@@ -373,23 +345,24 @@
       if (!url) return;
       els.importBtn.disabled = true;
       try {
-        const endpoint = isEmbedded ? '/modules/bot-bazos/parse-url' : '/parse-url';
-        const res = await fetch(endpoint, {
+        const res = await fetch(apiBase + '/parse-url', {
           method: 'POST',
           headers: mergeHeaders({ 'Content-Type': 'application/json' }),
           credentials: 'same-origin',
           body: JSON.stringify({ url })
         });
+        if (!res.ok) {
+          showImportMsg('error', 'Parse failed: HTTP ' + res.status);
+          return;
+        }
         const data = await res.json();
-        if (!data || !data.ok) {
-          showImportMsg('error', (data && data.reason) || 'Could not parse URL.');
+        if (!data.ok) {
+          showImportMsg('error', data.reason || 'Could not parse URL.');
           return;
         }
         applyParsed(data.parsed || {});
         showImportMsg('success', 'Filters imported from URL.');
         els.importUrl.value = '';
-      } catch {
-        showImportMsg('error', 'Could not contact bot service to parse URL.');
       } finally {
         els.importBtn.disabled = false;
       }
@@ -398,14 +371,92 @@
       if (e.key === 'Enter') { e.preventDefault(); els.importBtn.click(); }
     });
 
+    // City autocomplete: resolves typed city name → PSČ via geo-cz.
+    // Selecting a hit fills both `city` (display) and `psc` (canonical
+    // value used by the matcher); the user can still override psc by
+    // hand.
+    let suggestTimer = null;
+    let suggestHits = [];
+    let suggestIndex = -1;
+
+    function hideSuggest() {
+      els.citySuggest.hidden = true;
+      els.citySuggest.innerHTML = '';
+      suggestHits = [];
+      suggestIndex = -1;
+    }
+    function renderSuggest() {
+      if (!suggestHits.length) { hideSuggest(); return; }
+      els.citySuggest.innerHTML = suggestHits.map((h, i) => (
+        '<div class="suggest-item" role="option" data-i="' + i + '" aria-selected="' + (i === suggestIndex) + '">' +
+          escapeHtml(h.city) + ' <span class="sub">' + escapeHtml(h.psc) +
+          (h.district ? ' · ' + escapeHtml(h.district) : '') + '</span>' +
+        '</div>'
+      )).join('');
+      els.citySuggest.hidden = false;
+      notifyResize();
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function pickHit(hit) {
+      els.city.value = hit.city;
+      els.psc.value = hit.psc;
+      hideSuggest();
+    }
+    async function querySuggest(q) {
+      const res = await fetch(apiBase + '/city/suggest?q=' + encodeURIComponent(q) + '&limit=8', {
+        credentials: 'same-origin'
+      });
+      if (!res.ok) { hideSuggest(); return; }
+      const data = await res.json();
+      suggestHits = (data.results || []).slice(0, 8);
+      suggestIndex = -1;
+      renderSuggest();
+    }
+    els.city.addEventListener('input', () => {
+      const q = els.city.value.trim();
+      window.clearTimeout(suggestTimer);
+      if (q.length < 2) { hideSuggest(); return; }
+      suggestTimer = window.setTimeout(() => querySuggest(q), 180);
+    });
+    els.city.addEventListener('keydown', (e) => {
+      if (els.citySuggest.hidden) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        suggestIndex = Math.min(suggestHits.length - 1, suggestIndex + 1);
+        renderSuggest();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        suggestIndex = Math.max(0, suggestIndex - 1);
+        renderSuggest();
+      } else if (e.key === 'Enter' && suggestIndex >= 0) {
+        e.preventDefault();
+        pickHit(suggestHits[suggestIndex]);
+      } else if (e.key === 'Escape') {
+        hideSuggest();
+      }
+    });
+    els.citySuggest.addEventListener('mousedown', (e) => {
+      const item = e.target.closest('.suggest-item');
+      if (!item) return;
+      const i = parseInt(item.getAttribute('data-i'), 10);
+      if (Number.isFinite(i) && suggestHits[i]) pickHit(suggestHits[i]);
+    });
+    document.addEventListener('click', (e) => {
+      if (e.target !== els.city && !els.citySuggest.contains(e.target)) hideSuggest();
+    });
+
     function buildConfig() {
       return {
         category_main: els.trans.value || null,
         category_sub: els.prop.value || null,
         price_min: intOrNull(els.pmin.value),
         price_max: intOrNull(els.pmax.value),
-        city_contains: els.city.value.trim() || null,
-        psc_prefix: els.psc.value.trim() || null,
+        psc: els.psc.value.trim() || null,
+        radius_km: intOrNull(els.radius.value),
         title_keywords: csv(els.kw.value)
       };
     }
@@ -428,49 +479,38 @@
     els.submit.addEventListener('click', async () => {
       clearFormMsg();
       const config = buildConfig();
-      // Single-call save. The bot persists the config row; on insert
-      // it also fires notify.bot.welcome (best-effort). The BFF parent
-      // is told via module:saved and is responsible for flipping the
-      // users.bots[] entry from "pending" to "active".
-      if (isEmbedded) {
-        els.submit.disabled = true;
-        try {
-          const saveRes = await fetch('/modules/bot-bazos/configs/' + configId, {
-            method: 'POST',
-            headers: mergeHeaders({ 'Content-Type': 'application/json' }),
-            credentials: 'same-origin',
-            body: JSON.stringify({ config: config })
-          });
-          if (!saveRes.ok) {
-            const j = await saveRes.json().catch(() => ({}));
-            showFormError(j.detail || j.message || 'Could not save bot.');
-            return;
-          }
+      if (config.radius_km && !config.psc) {
+        showFormError('Radius requires a PSČ — pick a city or enter a PSČ manually.');
+        return;
+      }
+      els.submit.disabled = true;
+      try {
+        const target = isEmbedded
+          ? apiBase + '/configs/' + configId
+          : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId);
+        if (!isEmbedded && !userId) {
+          showFormError('user_id query param is required when running standalone.');
+          return;
+        }
+        const res = await fetch(target, {
+          method: 'POST',
+          headers: mergeHeaders({ 'Content-Type': 'application/json' }),
+          credentials: 'same-origin',
+          body: JSON.stringify({ config: config })
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          const detail = j && (j.detail || j.message);
+          showFormError(detail ? JSON.stringify(detail) : 'Could not save bot: HTTP ' + res.status);
+          return;
+        }
+        if (isEmbedded) {
           window.parent.postMessage({ type: 'module:saved' }, PARENT_ORIGIN);
-        } catch {
-          showFormError('Could not save bot.');
-        } finally {
-          els.submit.disabled = false;
-        }
-      } else {
-        if (!userId) { showFormError('user_id query param is required when running standalone.'); return; }
-        els.submit.disabled = true;
-        try {
-          const res = await fetch('/configs/' + configId + '?user_id=' + encodeURIComponent(userId), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: config })
-          });
-          if (!res.ok) {
-            showFormError('Could not save: HTTP ' + res.status);
-            return;
-          }
+        } else {
           showFormSuccess('Saved.');
-        } catch {
-          showFormError('Could not contact bot service.');
-        } finally {
-          els.submit.disabled = false;
         }
+      } finally {
+        els.submit.disabled = false;
       }
     });
 
@@ -494,9 +534,6 @@
     }
 
     window.addEventListener('message', (e) => {
-      // Ignore messages from cross-origin senders. In embedded mode the
-      // BFF parent shares our origin (the iframe is loaded through the
-      // BFF reverse proxy at /modules/<bot>/...).
       if (e.origin !== PARENT_ORIGIN) return;
       const data = e.data;
       if (!data || typeof data !== 'object') return;

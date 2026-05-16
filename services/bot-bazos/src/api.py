@@ -1,20 +1,3 @@
-"""HTTP surface of the Bazos bot service.
-
-The whole platform contract for this bot is just five endpoints:
-
-  GET  /healthz               — liveness probe
-  GET  /configure             — self-hosted configuration UI (HTML)
-  GET  /configs/{config_id}   — read-back for edit-mode pre-fill
-  POST /configs/{config_id}   — persist the form's config body, and
-                                fire welcome on first creation
-  POST /parse-url             — bazos.cz URL → partial config
-
-The reverse proxy at the BFF (/modules/bot-bazos/*) injects the
-authenticated `user_id` as a query parameter on every forwarded call.
-Lifecycle mutations (pause / resume / delete) are no longer driven by
-HTTP or AMQP from the BFF — the BFF writes this bot's config
-collection (declared in module_registry.config_collection) directly.
-"""
 from __future__ import annotations
 
 import logging
@@ -30,6 +13,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import repository, welcome
 from .config import settings
+from .geo_client import geo_client
 from .models import BotConfig
 
 logger = logging.getLogger(__name__)
@@ -37,9 +21,8 @@ logger = logging.getLogger(__name__)
 
 class CreateBody(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
-    # Forwarded for completeness so the welcome card can address the
-    # user's bot by its dashboard name. The bot does not persist this —
-    # the BFF stays the sole source of truth for users.bots[].name.
+    # Forwarded only so the welcome card can address the user's bot by
+    # the dashboard name they chose; the bot never persists it.
     bot_name: str = Field(default="", max_length=200)
 
 
@@ -56,16 +39,16 @@ _PROPERTY_TYPES = {
 def parse_bazos_url(raw: str) -> dict[str, Any]:
     """Translate a reality.bazos.cz filter URL into a partial config.
 
-    Returns either {"ok": True, "parsed": {...}} or
-    {"ok": False, "reason": "..."}.
+    Only fields that appear in the URL are returned. Anything that fails
+    to validate (non-numeric price, non-5-digit hlokalita, out-of-range
+    humkreis) is reported back as `{ok: false, reason: ...}` rather than
+    silently dropped — otherwise the user would see the form populate
+    "successfully" with a different filter than the one they pasted.
     """
     trimmed = (raw or "").strip()
     if not trimmed:
         return {"ok": False, "reason": "Paste a bazos.cz search URL."}
-    try:
-        parts = urlparse(trimmed)
-    except ValueError:
-        return {"ok": False, "reason": "That doesn\u2019t look like a valid URL."}
+    parts = urlparse(trimmed)
 
     host = (parts.hostname or "").lower()
     if not (host == "bazos.cz" or host.endswith(".bazos.cz")):
@@ -74,34 +57,40 @@ def parse_bazos_url(raw: str) -> dict[str, Any]:
     segments = [s for s in parts.path.split("/") if s]
     out: dict[str, Any] = {}
     if segments:
-        if segments[0] == "prodej":
+        if segments[0] == "prodam":
             out["category_main"] = "prodam"
-        elif segments[0] in {"pronajem", "pronajmu"}:
+        elif segments[0] == "pronajmu":
             out["category_main"] = "pronajmu"
     if len(segments) > 1 and segments[1] in _PROPERTY_TYPES:
         out["category_sub"] = segments[1]
 
     qs = parse_qs(parts.query)
-    cena_od = (qs.get("cenaod") or [""])[0]
-    cena_do = (qs.get("cenado") or [""])[0]
-    if cena_od:
-        try:
-            n = int(cena_od)
-            if n > 0:
-                out["price_min"] = n
-        except ValueError:
-            pass
-    if cena_do:
-        try:
-            n = int(cena_do)
-            if n > 0:
-                out["price_max"] = n
-        except ValueError:
-            pass
 
-    psc = (qs.get("hlokalita") or [""])[0]
-    if psc:
-        out["psc_prefix"] = psc[:5]
+    cena_od = (qs.get("cenaod") or [""])[0]
+    if cena_od:
+        n = int(cena_od)
+        if n > 0:
+            out["price_min"] = n
+
+    cena_do = (qs.get("cenado") or [""])[0]
+    if cena_do:
+        n = int(cena_do)
+        if n > 0:
+            out["price_max"] = n
+
+    hlokalita = (qs.get("hlokalita") or [""])[0].strip()
+    if hlokalita:
+        psc = hlokalita.replace(" ", "")
+        if len(psc) != 5 or not psc.isdigit():
+            return {"ok": False, "reason": f"hlokalita is not a 5-digit PSČ: {hlokalita!r}"}
+        out["psc"] = psc
+
+    humkreis = (qs.get("humkreis") or [""])[0].strip()
+    if humkreis:
+        km = int(humkreis)
+        if not (1 <= km <= 200):
+            return {"ok": False, "reason": f"humkreis must be 1–200 km, got {km}"}
+        out["radius_km"] = km
 
     hledat = (qs.get("hledat") or [""])[0].strip()
     if hledat:
@@ -134,6 +123,14 @@ def build_router() -> APIRouter:
     async def parse_url(body: ParseUrlBody) -> JSONResponse:
         return JSONResponse(parse_bazos_url(body.url))
 
+    @router.get("/city/suggest")
+    async def city_suggest(
+        q: str = Query(..., min_length=1, max_length=80),
+        limit: int = Query(8, ge=1, le=20),
+    ) -> JSONResponse:
+        hits = await geo_client.resolve_city(q, limit=limit)
+        return JSONResponse({"results": hits})
+
     @router.get("/configs/{config_id}")
     async def get_config(
         config_id: str,
@@ -145,8 +142,8 @@ def build_router() -> APIRouter:
         if not doc:
             raise HTTPException(status_code=404, detail="config not found")
         # The /modules/* reverse proxy proves the caller's identity by
-        # injecting `user_id` from the authenticated session; we refuse
-        # to serve another user's config row even if config_id leaked.
+        # injecting user_id from the session; we refuse to serve another
+        # user's row even if the config_id leaked.
         if str(doc.get("user_id")) != user_id:
             raise HTTPException(status_code=404, detail="config not found")
         return JSONResponse(_serialize_config(doc))
@@ -164,9 +161,6 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=err.errors()) from err
 
         db, rabbitmq = _state(request)
-        # Reject hijack attempts: a client cannot overwrite another
-        # user's config row even if they guess the config_id, because
-        # `user_id` here came from the proxy / session, not the body.
         existing = await repository.fetch_config(db, config_id)
         if existing and str(existing.get("user_id")) != user_id:
             raise HTTPException(status_code=404, detail="config not found")
@@ -177,24 +171,15 @@ def build_router() -> APIRouter:
             user_id=user_id,
             config=cfg.model_dump(mode="json"),
         )
-        # Welcome is fired here, only on insert (not on edit), and
-        # strictly best-effort — failure to publish does not fail the
-        # save. The user's bot is created either way; the welcome
-        # email is a courtesy.
         if created:
-            try:
-                await welcome.emit_welcome(
-                    db, rabbitmq,
-                    user_id=user_id,
-                    config_id=config_id,
-                    bot_name=body.bot_name,
-                    cfg=cfg,
-                )
-                await repository.mark_welcome_sent(db, config_id)
-            except Exception:
-                logger.exception(
-                    "welcome publish failed for config %s (continuing)", config_id,
-                )
+            await welcome.emit_welcome(
+                db, rabbitmq,
+                user_id=user_id,
+                config_id=config_id,
+                bot_name=body.bot_name,
+                cfg=cfg,
+            )
+            await repository.mark_welcome_sent(db, config_id)
         return JSONResponse(
             {"ok": True, "created": created, "config_id": config_id},
             status_code=201 if created else 200,

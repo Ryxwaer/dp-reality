@@ -1,17 +1,3 @@
-"""Welcome message composition for newly-created Bazos bots.
-
-When the iframe POSTs a brand-new configuration to /configs/<id>, the
-bot service publishes exactly one `notify.bot.welcome` event from
-inside that handler. Unlike `notify.bot.processed`, the welcome payload
-carries everything the email-notifier needs to send the email — there
-is no shared `notifications` row to fetch. The event is one-shot: the
-notifier sends a single message immediately on receipt.
-
-The card intentionally contains no real listings: the user has just
-been on the portal selecting filters, so a "here are listings you just
-saw" digest is noise. We send a short stats summary instead, plus a
-human-readable echo of the filter so the user can confirm it.
-"""
 from __future__ import annotations
 
 import html as html_lib
@@ -19,10 +5,10 @@ import logging
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import ValidationError
 
-from . import matcher, repository
+from . import matcher, publisher, repository
 from .config import settings
+from .geo_client import geo_client
 from .models import BotConfig, Listing
 
 logger = logging.getLogger(__name__)
@@ -45,12 +31,6 @@ _PROPERTY_LABELS = {
 
 
 def _format_filter_summary(cfg: BotConfig) -> str:
-    """One-line, human-readable echo of the matcher criteria.
-
-    Order is deliberately fixed (transaction → property → price →
-    location → keywords) so the user can scan it left-to-right without
-    surprises. Anything left at default is omitted.
-    """
     parts: list[str] = []
     transaction = _PRICE_TYPES.get(cfg.category_main or "", "")
     property_label = _PROPERTY_LABELS.get(cfg.category_sub or "", "listings")
@@ -66,10 +46,10 @@ def _format_filter_summary(cfg: BotConfig) -> str:
     elif cfg.price_max is not None:
         parts.append(f"up to {cfg.price_max:,} CZK".replace(",", " "))
 
-    if cfg.city_contains:
-        parts.append(f"in {cfg.city_contains}")
-    if cfg.psc_prefix:
-        parts.append(f"PSČ {cfg.psc_prefix}*")
+    if cfg.psc and cfg.radius_km:
+        parts.append(f"within {cfg.radius_km} km of PSČ {cfg.psc}")
+    elif cfg.psc:
+        parts.append(f"PSČ {cfg.psc}")
     if cfg.title_keywords:
         parts.append("matching " + ", ".join(f'"{k}"' for k in cfg.title_keywords))
     return " · ".join(parts)
@@ -78,21 +58,21 @@ def _format_filter_summary(cfg: BotConfig) -> str:
 async def _count_matching(db: AsyncIOMotorDatabase, cfg: BotConfig) -> int:
     """Count currently-stored listings that satisfy the matcher.
 
-    Runs the matcher in-process rather than translating it to a Mongo
-    query: keeps the matcher single-sourced (the same code that decides
-    "is this a notification worth sending?" decides what gets counted).
-    Acceptable cost: this is a one-shot per bot creation against a
-    bounded collection (a few thousand documents at the project scale).
+    Runs the matcher in-process so the same code decides what counts as
+    a match here and what triggers a notification in the scrape cycle.
+    Acceptable cost: a one-shot per bot creation against a bounded
+    collection at this project's scale.
     """
+    allowed_pscs: set[str] | None = None
+    if cfg.psc and cfg.radius_km:
+        allowed_pscs = await geo_client.in_radius_by_psc(cfg.psc, cfg.radius_km)
+
     cursor = db[repository.LISTINGS_COLLECTION].find({})
     docs = await cursor.to_list(length=None)
     count = 0
     for doc in docs:
-        try:
-            listing = Listing.model_validate(doc)
-        except ValidationError:
-            continue
-        if matcher.matches(cfg, listing):
+        listing = Listing.model_validate(doc)
+        if matcher.matches(cfg, listing, allowed_pscs=allowed_pscs):
             count += 1
     return count
 
@@ -107,7 +87,6 @@ def render_welcome_card(
     matching_count: int,
     cfg: BotConfig,
 ) -> str:
-    """Self-contained HTML card; same conventions as match cards."""
     name = _esc(bot_name) or "Untitled bot"
     summary = _esc(_format_filter_summary(cfg))
     interval = settings.scrape_interval_minutes
@@ -175,19 +154,7 @@ async def emit_welcome(
     bot_name: str,
     cfg: BotConfig,
 ) -> None:
-    """End-to-end: count matches, render, publish.
-
-    Errors are logged but never propagated — the welcome email is a
-    courtesy and must not block the user-visible bot creation flow.
-    """
-    from . import publisher
-
-    try:
-        matching_count = await _count_matching(db, cfg)
-    except Exception:
-        logger.exception("welcome: matching count failed for config %s", config_id)
-        matching_count = 0
-
+    matching_count = await _count_matching(db, cfg)
     payload = build_welcome_payload(
         user_id=user_id,
         config_id=config_id,
@@ -195,14 +162,10 @@ async def emit_welcome(
         matching_count=matching_count,
         cfg=cfg,
     )
-
-    try:
-        await publisher.publish_bot_welcome(rabbitmq, payload)
-        logger.info(
-            "welcome: published for config %s (user %s, %d matching listings)",
-            config_id,
-            user_id,
-            matching_count,
-        )
-    except Exception:
-        logger.exception("welcome: publish failed for config %s", config_id)
+    await publisher.publish_bot_welcome(rabbitmq, payload)
+    logger.info(
+        "welcome: published for config %s (user %s, %d matching listings)",
+        config_id,
+        user_id,
+        matching_count,
+    )
