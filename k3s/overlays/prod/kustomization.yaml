@@ -22,6 +22,6 @@ images:
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
     newTag: main-95a89e88-1778945630 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/geo-cz
-    newTag: main-95a89e88-1778945631 # {"$imagepolicy": "flux-system:geo-cz:tag"}
+    newTag: main-e6da68bd-1778947504 # {"$imagepolicy": "flux-system:geo-cz:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
     newTag: main-e6da68bd-1778947510 # {"$imagepolicy": "flux-system:frontend:tag"}
