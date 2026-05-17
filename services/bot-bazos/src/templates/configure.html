@@ -198,20 +198,16 @@
       </div>
       <div class="grid-2">
         <div class="suggest-wrap">
-          <label for="city">City</label>
-          <input id="city" class="input" placeholder="e.g. Brno" autocomplete="off" />
-          <div id="city-suggest" class="suggest-list" hidden role="listbox"></div>
-          <span class="help-inline">Resolved to a PSČ via the geo service.</span>
+          <label for="loc">City or PSČ</label>
+          <input id="loc" class="input" placeholder="e.g. Brno or 60200" autocomplete="off" />
+          <div id="loc-suggest" class="suggest-list" hidden role="listbox"></div>
+          <span class="help-inline">Type a city name or 5-digit PSČ, then pick a suggestion to lock the location.</span>
         </div>
         <div>
-          <label for="psc">PSČ (or override city)</label>
-          <input id="psc" class="input" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="e.g. 60200" />
+          <label for="radius">Radius (km)</label>
+          <input id="radius" class="input" type="number" min="1" max="200" placeholder="—" />
+          <span class="help-inline">Empty&nbsp;=&nbsp;exact-PSČ match.</span>
         </div>
-      </div>
-      <div>
-        <label for="radius">Radius (km from PSČ)</label>
-        <input id="radius" class="input" type="number" min="1" max="200" placeholder="—" />
-        <span class="help-inline">Requires PSČ. Empty&nbsp;=&nbsp;exact-PSČ match.</span>
       </div>
       <div>
         <label for="kw">Must contain (title or description)</label>
@@ -273,15 +269,43 @@
       trans: document.getElementById('trans'),
       pmin: document.getElementById('pmin'),
       pmax: document.getElementById('pmax'),
-      city: document.getElementById('city'),
-      citySuggest: document.getElementById('city-suggest'),
-      psc: document.getElementById('psc'),
+      loc: document.getElementById('loc'),
+      locSuggest: document.getElementById('loc-suggest'),
       radius: document.getElementById('radius'),
       kw: document.getElementById('kw'),
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
       formMsg: document.getElementById('form-msg')
     };
+
+    // The combined "City or PSČ" input shows a human-readable label
+    // ("Brno-Veveří · 60200"), but the matcher only needs the PSČ. We
+    // keep the canonical value in `selectedPsc`; the display string is
+    // a UI affordance only. Editing the input invalidates the lock
+    // unless the new text is a bare 5-digit PSČ.
+    let selectedPsc = null;
+    function formatLocLabel(hit) { return hit.city + ' · ' + hit.psc; }
+    function setLocFromHit(hit) {
+      selectedPsc = hit.psc;
+      els.loc.value = formatLocLabel(hit);
+    }
+    function setLocFromPsc(psc) {
+      if (!psc) { selectedPsc = null; els.loc.value = ''; return; }
+      // Look up the canonical record so the input shows the city name
+      // alongside the PSČ. If the lookup misses we still keep the PSČ
+      // as the displayed text — the user pasted it, we believe it.
+      fetch(apiBase + '/location/suggest?q=' + encodeURIComponent(psc) + '&limit=1', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        const hit = data && data.results && data.results[0];
+        if (hit && hit.psc === psc) {
+          setLocFromHit(hit);
+        } else {
+          selectedPsc = psc;
+          els.loc.value = psc;
+        }
+      });
+    }
 
     function csv(s) {
       return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -295,7 +319,7 @@
       if (typeof p.category_sub === 'string') els.prop.value = p.category_sub;
       if (typeof p.price_min === 'number') els.pmin.value = String(p.price_min);
       if (typeof p.price_max === 'number') els.pmax.value = String(p.price_max);
-      if (typeof p.psc === 'string') els.psc.value = p.psc;
+      if (typeof p.psc === 'string') setLocFromPsc(p.psc);
       if (typeof p.radius_km === 'number') els.radius.value = String(p.radius_km);
       if (typeof p.keywords === 'string') els.kw.value = p.keywords;
     }
@@ -323,7 +347,7 @@
       if (c.category_sub) els.prop.value = c.category_sub;
       if (c.price_min != null) els.pmin.value = String(c.price_min);
       if (c.price_max != null) els.pmax.value = String(c.price_max);
-      if (c.psc) els.psc.value = c.psc;
+      if (c.psc) setLocFromPsc(c.psc);
       if (c.radius_km != null) els.radius.value = String(c.radius_km);
       if (Array.isArray(c.keywords)) els.kw.value = c.keywords.join(', ');
     }
@@ -371,30 +395,29 @@
       if (e.key === 'Enter') { e.preventDefault(); els.importBtn.click(); }
     });
 
-    // City autocomplete: resolves typed city name → PSČ in-process
-    // against the bot's private bazos_geo collection.
-    // Selecting a hit fills both `city` (display) and `psc` (canonical
-    // value used by the matcher); the user can still override psc by
-    // hand.
+    // Combined "City or PSČ" autocomplete. The /location/suggest
+    // endpoint dispatches on whether the query is numeric (PSČ prefix
+    // scan) or text (diacritic-folded city-name search); both return
+    // the same record shape so rendering is uniform.
     let suggestTimer = null;
     let suggestHits = [];
     let suggestIndex = -1;
 
     function hideSuggest() {
-      els.citySuggest.hidden = true;
-      els.citySuggest.innerHTML = '';
+      els.locSuggest.hidden = true;
+      els.locSuggest.innerHTML = '';
       suggestHits = [];
       suggestIndex = -1;
     }
     function renderSuggest() {
       if (!suggestHits.length) { hideSuggest(); return; }
-      els.citySuggest.innerHTML = suggestHits.map((h, i) => (
+      els.locSuggest.innerHTML = suggestHits.map((h, i) => (
         '<div class="suggest-item" role="option" data-i="' + i + '" aria-selected="' + (i === suggestIndex) + '">' +
           escapeHtml(h.city) + ' <span class="sub">' + escapeHtml(h.psc) +
           (h.district ? ' · ' + escapeHtml(h.district) : '') + '</span>' +
         '</div>'
       )).join('');
-      els.citySuggest.hidden = false;
+      els.locSuggest.hidden = false;
       notifyResize();
     }
     function escapeHtml(s) {
@@ -403,12 +426,11 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     function pickHit(hit) {
-      els.city.value = hit.city;
-      els.psc.value = hit.psc;
+      setLocFromHit(hit);
       hideSuggest();
     }
     async function querySuggest(q) {
-      const res = await fetch(apiBase + '/city/suggest?q=' + encodeURIComponent(q) + '&limit=8', {
+      const res = await fetch(apiBase + '/location/suggest?q=' + encodeURIComponent(q) + '&limit=8', {
         credentials: 'same-origin'
       });
       if (!res.ok) { hideSuggest(); return; }
@@ -417,14 +439,17 @@
       suggestIndex = -1;
       renderSuggest();
     }
-    els.city.addEventListener('input', () => {
-      const q = els.city.value.trim();
+    els.loc.addEventListener('input', () => {
+      // Any keystroke invalidates a previously locked PSČ unless the
+      // current text re-validates as a bare 5-digit PSČ.
+      const v = els.loc.value.trim();
+      selectedPsc = /^\d{5}$/.test(v) ? v : null;
       window.clearTimeout(suggestTimer);
-      if (q.length < 2) { hideSuggest(); return; }
-      suggestTimer = window.setTimeout(() => querySuggest(q), 180);
+      if (v.length < 1) { hideSuggest(); return; }
+      suggestTimer = window.setTimeout(() => querySuggest(v), 180);
     });
-    els.city.addEventListener('keydown', (e) => {
-      if (els.citySuggest.hidden) return;
+    els.loc.addEventListener('keydown', (e) => {
+      if (els.locSuggest.hidden) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         suggestIndex = Math.min(suggestHits.length - 1, suggestIndex + 1);
@@ -440,14 +465,14 @@
         hideSuggest();
       }
     });
-    els.citySuggest.addEventListener('mousedown', (e) => {
+    els.locSuggest.addEventListener('mousedown', (e) => {
       const item = e.target.closest('.suggest-item');
       if (!item) return;
       const i = parseInt(item.getAttribute('data-i'), 10);
       if (Number.isFinite(i) && suggestHits[i]) pickHit(suggestHits[i]);
     });
     document.addEventListener('click', (e) => {
-      if (e.target !== els.city && !els.citySuggest.contains(e.target)) hideSuggest();
+      if (e.target !== els.loc && !els.locSuggest.contains(e.target)) hideSuggest();
     });
 
     function buildConfig() {
@@ -456,7 +481,7 @@
         category_sub: els.prop.value || null,
         price_min: intOrNull(els.pmin.value),
         price_max: intOrNull(els.pmax.value),
-        psc: els.psc.value.trim() || null,
+        psc: selectedPsc,
         radius_km: intOrNull(els.radius.value),
         keywords: csv(els.kw.value)
       };

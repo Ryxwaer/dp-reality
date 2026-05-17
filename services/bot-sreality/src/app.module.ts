@@ -14,6 +14,8 @@ import { NotificationRendererService } from './notification-renderer.service.js'
 import { CycleService } from './cycle.service.js';
 import { RegistryService } from './registry.service.js';
 import { RegionSeederService } from './region-seeder.service.js';
+import { NominatimService } from './nominatim.service.js';
+import { RegionResolverService } from './region-resolver.service.js';
 import { WelcomeService } from './welcome.service.js';
 import { BotsController } from './bots.controller.js';
 import { ConfigureController } from './configure.controller.js';
@@ -41,6 +43,8 @@ import { HealthController } from './health.controller.js';
     ScraperService,
     RegistryService,
     RegionSeederService,
+    NominatimService,
+    RegionResolverService,
     WelcomeService,
   ],
   controllers: [

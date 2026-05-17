@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -9,8 +10,47 @@ import {
   Query,
 } from '@nestjs/common';
 import { RepositoryService } from './repository.service.js';
+import { RegionResolverService } from './region-resolver.service.js';
 import { WelcomeService } from './welcome.service.js';
 import type { SrealityBotConfig } from './bot-config.schema.js';
+import type {
+  Amenity,
+  BuildingType,
+  Condition,
+  Furnished,
+  MediaFlag,
+  Ownership,
+} from './listing.schema.js';
+
+const OWNERSHIP_VALUES: ReadonlySet<Ownership> = new Set([
+  'personal', 'cooperative', 'state', 'collective',
+]);
+const BUILDING_TYPE_VALUES: ReadonlySet<BuildingType> = new Set([
+  'brick', 'panel', 'wooden', 'mixed', 'skeletal', 'stone', 'assembled',
+]);
+const FURNISHED_VALUES: ReadonlySet<Furnished> = new Set([
+  'furnished', 'not_furnished', 'partly_furnished',
+]);
+const CONDITION_VALUES: ReadonlySet<Condition> = new Set([
+  'new_building', 'after_reconstruction', 'before_reconstruction',
+  'in_construction', 'low_energy',
+]);
+const AMENITY_VALUES: ReadonlySet<Amenity> = new Set([
+  'balcony', 'terrace', 'loggia', 'cellar', 'elevator',
+  'parking_lots', 'garage', 'basin',
+]);
+const MEDIA_VALUES: ReadonlySet<MediaFlag> = new Set([
+  'floor_plan', 'video', 'matterport',
+]);
+
+function dedupeIn<T>(input: unknown, allowed: ReadonlySet<T>): T[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<T>();
+  for (const v of input) {
+    if (typeof v === 'string' && allowed.has(v as T)) seen.add(v as T);
+  }
+  return Array.from(seen);
+}
 
 interface PostBody {
   bot_name?: string;
@@ -21,6 +61,13 @@ function normalizeConfig(input: Partial<SrealityBotConfig> | undefined): Srealit
   const c = input ?? {};
   const out = {
     category_sub_cb: Array.isArray(c.category_sub_cb) ? c.category_sub_cb : [],
+    ownership_in: dedupeIn(c.ownership_in, OWNERSHIP_VALUES),
+    building_type_in: dedupeIn(c.building_type_in, BUILDING_TYPE_VALUES),
+    condition_in: dedupeIn(c.condition_in, CONDITION_VALUES),
+    furnished_in: dedupeIn(c.furnished_in, FURNISHED_VALUES),
+    amenities_all: dedupeIn(c.amenities_all, AMENITY_VALUES),
+    media_required: dedupeIn(c.media_required, MEDIA_VALUES),
+    exclude_rk_exclusive: !!c.exclude_rk_exclusive,
   } as SrealityBotConfig;
 
   if (typeof c.category_main_cb === 'number') out.category_main_cb = c.category_main_cb;
@@ -59,6 +106,7 @@ export class BotsController {
   constructor(
     private readonly repository: RepositoryService,
     private readonly welcome: WelcomeService,
+    private readonly regionResolver: RegionResolverService,
   ) {}
 
   @Get(':config_id')
@@ -87,6 +135,21 @@ export class BotsController {
   ) {
     if (!userId) throw new NotFoundException('config not found');
     const config = normalizeConfig(body.config);
+
+    // Eagerly resolve the region's polygon (or confirm the entry has
+    // none and will fall back to centre+radius). Doing it here means a
+    // user paying attention to the save dialog gets immediate
+    // feedback if Nominatim is down or the region is missing, instead
+    // of silently saving a config that produces zero matches.
+    if (config.region_id) {
+      try {
+        await this.regionResolver.ensureResolved(config.region_id);
+      } catch (err) {
+        throw new BadRequestException(
+          `Cannot resolve region ${config.region_id}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     const existing = await this.repository.fetchConfig(configId);
     if (existing && String(existing.user_id) !== userId) {

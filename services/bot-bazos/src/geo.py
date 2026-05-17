@@ -109,6 +109,32 @@ async def resolve_city(
     return [_doc_to_record(d) async for d in prefix_cursor]
 
 
+async def _suggest_by_psc_prefix(
+    db: AsyncIOMotorDatabase, prefix: str, limit: int
+) -> list[dict[str, Any]]:
+    cursor = db[GEO_COLLECTION].find(
+        {"psc": {"$regex": "^" + re.escape(prefix)}},
+        projection=_projection(),
+        sort=[("psc", ASCENDING), ("city", ASCENDING)],
+    ).limit(limit)
+    return [_doc_to_record(d) async for d in cursor]
+
+
+async def suggest(
+    db: AsyncIOMotorDatabase, query: str, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Autocomplete dispatcher for the configure form's single-field
+    location picker. Numeric input (1–5 digits) is treated as a PSČ
+    prefix; anything else as a (diacritic-folded) city name.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    if q.isdigit() and 1 <= len(q) <= 5:
+        return await _suggest_by_psc_prefix(db, q, limit)
+    return await resolve_city(db, q, limit)
+
+
 async def in_radius_by_psc(
     db: AsyncIOMotorDatabase, psc: str, radius_km: float
 ) -> set[str]:

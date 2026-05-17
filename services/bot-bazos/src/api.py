@@ -122,14 +122,17 @@ def build_router() -> APIRouter:
     async def parse_url(body: ParseUrlBody) -> JSONResponse:
         return JSONResponse(parse_bazos_url(body.url))
 
-    @router.get("/city/suggest")
-    async def city_suggest(
+    @router.get("/location/suggest")
+    async def location_suggest(
         request: Request,
         q: str = Query(..., min_length=1, max_length=80),
         limit: int = Query(8, ge=1, le=20),
     ) -> JSONResponse:
+        # Dispatcher: numeric q → PSČ prefix scan; otherwise → city
+        # name (diacritic- and case-insensitive). One endpoint powers
+        # the combined "City or PSČ" autocomplete in the configure form.
         db, _ = _state(request)
-        hits = await geo.resolve_city(db, q, limit=limit)
+        hits = await geo.suggest(db, q, limit=limit)
         return JSONResponse({"results": hits})
 
     @router.get("/configs/{config_id}")

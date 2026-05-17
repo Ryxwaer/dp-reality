@@ -2,8 +2,66 @@ import { Injectable, Logger } from '@nestjs/common';
 import { config } from './config.js';
 import { MatcherService } from './matcher.service.js';
 import { PublisherService } from './publisher.service.js';
+import { RegionResolverService } from './region-resolver.service.js';
+import { buildRegionFilter, type RegionPredicate } from './region-filter.js';
 import { RepositoryService } from './repository.service.js';
 import type { SrealityBotConfig } from './bot-config.schema.js';
+import type {
+  Amenity,
+  BuildingType,
+  Condition,
+  Furnished,
+  MediaFlag,
+  Ownership,
+} from './listing.schema.js';
+
+const OWNERSHIP_LABELS: Record<Ownership, string> = {
+  personal: 'personal',
+  cooperative: 'cooperative',
+  state: 'state',
+  collective: 'collective',
+};
+
+const CONDITION_LABELS: Record<Condition, string> = {
+  new_building: 'new building',
+  after_reconstruction: 'after reconstruction',
+  before_reconstruction: 'before reconstruction',
+  in_construction: 'under construction',
+  low_energy: 'low energy',
+};
+
+const FURNISHED_LABELS: Record<Furnished, string> = {
+  furnished: 'furnished',
+  partly_furnished: 'partly furnished',
+  not_furnished: 'unfurnished',
+};
+
+const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
+  brick: 'brick',
+  panel: 'panel',
+  wooden: 'wooden',
+  mixed: 'mixed',
+  skeletal: 'skeletal',
+  stone: 'stone',
+  assembled: 'assembled',
+};
+
+const AMENITY_LABELS: Record<Amenity, string> = {
+  balcony: 'balcony',
+  terrace: 'terrace',
+  loggia: 'loggia',
+  cellar: 'cellar',
+  elevator: 'elevator',
+  parking_lots: 'parking',
+  garage: 'garage',
+  basin: 'pool',
+};
+
+const MEDIA_LABELS: Record<MediaFlag, string> = {
+  floor_plan: 'floor plan',
+  video: 'video',
+  matterport: '3D walk-through',
+};
 
 const APARTMENT_DISPO_LABELS: Record<number, string> = {
   2: '1+kk', 3: '1+1', 4: '2+kk', 5: '2+1', 6: '3+kk', 7: '3+1',
@@ -77,6 +135,23 @@ function summariseFilter(cfg: SrealityBotConfig): string {
     parts.push(`within ${cfg.radius_km} km (${where})`);
   }
 
+  const labelledList = <T extends string>(
+    arr: T[] | undefined,
+    table: Record<T, string>,
+    prefix: string,
+  ) => {
+    if (!arr?.length) return;
+    parts.push(`${prefix}: ${arr.map((x) => table[x] ?? x).join(', ')}`);
+  };
+
+  labelledList<Ownership>(cfg.ownership_in, OWNERSHIP_LABELS, 'ownership');
+  labelledList<Condition>(cfg.condition_in, CONDITION_LABELS, 'condition');
+  labelledList<Furnished>(cfg.furnished_in, FURNISHED_LABELS, 'furnished');
+  labelledList<BuildingType>(cfg.building_type_in, BUILDING_TYPE_LABELS, 'material');
+  labelledList<Amenity>(cfg.amenities_all, AMENITY_LABELS, 'must have');
+  labelledList<MediaFlag>(cfg.media_required, MEDIA_LABELS, 'media');
+  if (cfg.exclude_rk_exclusive) parts.push('hide single-agency listings');
+
   return parts.join(' \u00b7 ');
 }
 
@@ -123,6 +198,7 @@ export class WelcomeService {
     private readonly repository: RepositoryService,
     private readonly matcher: MatcherService,
     private readonly publisher: PublisherService,
+    private readonly regionResolver: RegionResolverService,
   ) {}
 
   async emit(input: {
@@ -131,10 +207,11 @@ export class WelcomeService {
     botName: string;
     cfg: SrealityBotConfig;
   }): Promise<void> {
+    const regionFilter = await this.buildRegionFilter(input.cfg);
     let matchingCount = 0;
     const all = await this.repository.fetchAllListings();
     for (const listing of all) {
-      if (this.matcher.matches(input.cfg, listing)) matchingCount += 1;
+      if (this.matcher.matches(input.cfg, listing, regionFilter)) matchingCount += 1;
     }
 
     const html = renderWelcomeCard({
@@ -153,6 +230,18 @@ export class WelcomeService {
     });
     this.logger.log(
       `welcome: published for config ${input.configId} (user ${input.userId}, ${matchingCount} matching listings)`,
+    );
+  }
+
+  private async buildRegionFilter(
+    cfg: SrealityBotConfig,
+  ): Promise<RegionPredicate | null> {
+    if (!cfg.region_id || cfg.radius_km == null || cfg.radius_km < 0) return null;
+    const region = await this.regionResolver.findById(cfg.region_id);
+    if (!region) return null;
+    return buildRegionFilter(
+      [{ geometry: region.geometry, center: region.center }],
+      cfg.radius_km,
     );
   }
 }

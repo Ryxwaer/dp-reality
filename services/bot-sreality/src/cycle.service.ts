@@ -4,7 +4,10 @@ import { MatcherService } from './matcher.service.js';
 import { NotificationRendererService } from './notification-renderer.service.js';
 import { PublisherService } from './publisher.service.js';
 import { RepositoryService } from './repository.service.js';
+import { RegionResolverService } from './region-resolver.service.js';
+import { buildRegionFilter, type RegionPredicate } from './region-filter.js';
 import type { Listing } from './listing.schema.js';
+import type { SrealityBotConfig } from './bot-config.schema.js';
 
 @Injectable()
 export class CycleService {
@@ -15,6 +18,7 @@ export class CycleService {
     private readonly matcher: MatcherService,
     private readonly renderer: NotificationRendererService,
     private readonly publisher: PublisherService,
+    private readonly regionResolver: RegionResolverService,
   ) {}
 
   // Evaluate every active configuration against the freshly inserted
@@ -36,8 +40,9 @@ export class CycleService {
         bucket = { userId, rows: [] };
         buckets.set(userId, bucket);
       }
+      const regionFilter = await this.buildPredicateFor(cfg.config);
       for (const listing of newListings) {
-        if (this.matcher.matches(cfg.config, listing)) {
+        if (this.matcher.matches(cfg.config, listing, regionFilter)) {
           bucket.rows.push(
             this.renderer.buildNotification({
               userId,
@@ -64,5 +69,32 @@ export class CycleService {
         runId,
       });
     }
+  }
+
+  // A null result means "no radius-filter configured" — the matcher
+  // skips the geographic check entirely. We do *not* lazy-resolve
+  // missing polygons here: that would couple every match cycle to
+  // Nominatim, hammer their service, and stall the cycle on transient
+  // failures. Resolution is the responsibility of the save path
+  // (BotsController + ParseUrlController), so by the time a config is
+  // persisted its sreality_geo entry already carries either a polygon
+  // or a deliberate "no polygon for this type" marker.
+  private async buildPredicateFor(
+    cfg: SrealityBotConfig,
+  ): Promise<RegionPredicate | null> {
+    if (!cfg.region_id || cfg.radius_km == null || cfg.radius_km < 0) {
+      return null;
+    }
+    const region = await this.regionResolver.findById(cfg.region_id);
+    if (!region) {
+      this.logger.warn(
+        `Config references unknown region ${cfg.region_id}; skipping radius filter`,
+      );
+      return null;
+    }
+    return buildRegionFilter(
+      [{ geometry: region.geometry, center: region.center }],
+      cfg.radius_km,
+    );
   }
 }

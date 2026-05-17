@@ -2,7 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { config } from './config.js';
-import { type Listing } from './listing.schema.js';
+import {
+  type Amenity,
+  type BuildingType,
+  type Condition,
+  type Furnished,
+  type Listing,
+  type Ownership,
+} from './listing.schema.js';
 import { RepositoryService } from './repository.service.js';
 import { CycleService } from './cycle.service.js';
 
@@ -21,6 +28,61 @@ interface SrealityEstate {
   };
   gps?: { lat: number; lon: number };
   labelsAll?: string[][];
+  has_floor_plan?: boolean;
+  has_video?: boolean;
+  has_matterport_url?: boolean;
+  exclusively_at_rk?: boolean;
+}
+
+const OWNERSHIP_TAGS = new Set<Ownership>(['personal', 'cooperative', 'state', 'collective']);
+const BUILDING_TYPE_TAGS = new Set<BuildingType>([
+  'brick', 'panel', 'wooden', 'mixed', 'skeletal', 'stone', 'assembled',
+]);
+const FURNISHED_TAGS = new Set<Furnished>([
+  'furnished', 'not_furnished', 'partly_furnished',
+]);
+const CONDITION_TAGS = new Set<Condition>([
+  'new_building', 'after_reconstruction', 'in_construction',
+  'before_reconstruction', 'low_energy',
+]);
+const AMENITY_TAGS = new Set<Amenity>([
+  'balcony', 'terrace', 'loggia', 'cellar', 'elevator',
+  'parking_lots', 'garage', 'basin',
+]);
+
+interface DerivedLabels {
+  ownership?: Ownership;
+  building_type?: BuildingType;
+  furnished?: Furnished;
+  condition_set: Condition[];
+  amenity_set: Amenity[];
+}
+
+// Project the heterogeneous `labelsAll[0]` tag bag into the typed
+// fields the matcher uses. Single-valued taxonomies (ownership, type,
+// furnished) are populated by the *first* matching tag — sreality's
+// labelsAll is sorted with the canonical value first; later
+// duplicates are noise.
+function projectLabels(labels: string[]): DerivedLabels {
+  const out: DerivedLabels = { condition_set: [], amenity_set: [] };
+  const seenAmenities = new Set<Amenity>();
+  const seenConditions = new Set<Condition>();
+  for (const t of labels) {
+    if (!out.ownership && OWNERSHIP_TAGS.has(t as Ownership)) {
+      out.ownership = t as Ownership;
+    } else if (!out.building_type && BUILDING_TYPE_TAGS.has(t as BuildingType)) {
+      out.building_type = t as BuildingType;
+    } else if (!out.furnished && FURNISHED_TAGS.has(t as Furnished)) {
+      out.furnished = t as Furnished;
+    } else if (CONDITION_TAGS.has(t as Condition) && !seenConditions.has(t as Condition)) {
+      seenConditions.add(t as Condition);
+      out.condition_set.push(t as Condition);
+    } else if (AMENITY_TAGS.has(t as Amenity) && !seenAmenities.has(t as Amenity)) {
+      seenAmenities.add(t as Amenity);
+      out.amenity_set.push(t as Amenity);
+    }
+  }
+  return out;
 }
 
 export type ListingData = Omit<Listing, 'first_seen' | 'last_seen' | 'run_id'>;
@@ -102,6 +164,7 @@ function parseEstate(
   const district = cityWithDistrict[1]?.trim() || undefined;
 
   const labels = estate.labelsAll?.[0] ?? [];
+  const derived = projectLabels(labels);
 
   const key = buildDedupeKey(estate, priceType, propertyType, sourceId);
   return {
@@ -122,6 +185,15 @@ function parseEstate(
     category_sub_cb: estate.seo?.category_sub_cb,
     category_type_cb: estate.seo?.category_type_cb,
     labels,
+    ownership: derived.ownership,
+    building_type: derived.building_type,
+    furnished: derived.furnished,
+    condition_set: derived.condition_set,
+    amenity_set: derived.amenity_set,
+    has_floor_plan: !!estate.has_floor_plan,
+    has_video: !!estate.has_video,
+    has_matterport: !!estate.has_matterport_url,
+    exclusively_at_rk: !!estate.exclusively_at_rk,
   };
 }
 

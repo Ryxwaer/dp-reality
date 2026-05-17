@@ -1,7 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Logger, Post } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { Region, type RegionDocument } from './region.schema.js';
+import { RegionResolverService } from './region-resolver.service.js';
+import type {
+  Condition,
+  Furnished,
+  Ownership,
+} from './listing.schema.js';
 
 interface ParseBody {
   url?: string;
@@ -24,7 +30,36 @@ interface Parsed {
   radius_km?: number;
   region_label?: string;
   region_id?: string;
+  ownership_in?: Ownership[];
+  condition_in?: Condition[];
+  furnished_in?: Furnished[];
 }
+
+// Sreality URL → typed-tag mappings, validated empirically against
+// the live site (only entries that visibly change the result count
+// are mapped; the others land in URLs but are ignored server-side
+// and therefore would be misleading to advertise as filters).
+const VLASTNICTVI_TO_OWNERSHIP: Record<string, Ownership> = {
+  osobni: 'personal',
+  druzstevni: 'cooperative',
+  statni: 'state',
+};
+
+const STAV_TO_CONDITION: Record<string, Condition> = {
+  novostavba: 'new_building',
+  'po-rekonstrukci': 'after_reconstruction',
+  'pred-rekonstrukci': 'before_reconstruction',
+  've-vystavbe': 'in_construction',
+  nizkoenergeticky: 'low_energy',
+};
+
+const VYBAVENI_TO_FURNISHED: Record<string, Furnished> = {
+  vybaveny: 'furnished',
+  ano: 'furnished',
+  castecne: 'partly_furnished',
+  nevybaveny: 'not_furnished',
+  ne: 'not_furnished',
+};
 
 type ParseResult =
   | { ok: true; parsed: Parsed }
@@ -114,6 +149,18 @@ function parseSyntactic(input: string | undefined): { ok: false; reason: string 
     if (Number.isFinite(n)) out.price_max = n;
   }
 
+  const vlastnictvi = url.searchParams.get('vlastnictvi')?.trim().toLowerCase();
+  const own = vlastnictvi ? VLASTNICTVI_TO_OWNERSHIP[vlastnictvi] : undefined;
+  if (own) out.ownership_in = [own];
+
+  const stav = url.searchParams.get('stav')?.trim().toLowerCase();
+  const cond = stav ? STAV_TO_CONDITION[stav] : undefined;
+  if (cond) out.condition_in = [cond];
+
+  const vybaveni = url.searchParams.get('vybaveni')?.trim().toLowerCase();
+  const furn = vybaveni ? VYBAVENI_TO_FURNISHED[vybaveni] : undefined;
+  if (furn) out.furnished_in = [furn];
+
   const regionName = url.searchParams.get('region')?.trim();
   const regionIdStr = url.searchParams.get('region-id');
   const regionTyp = url.searchParams.get('region-typ')?.trim();
@@ -134,8 +181,11 @@ function parseSyntactic(input: string | undefined): { ok: false; reason: string 
 
 @Controller('parse-url')
 export class ParseUrlController {
+  private readonly logger = new Logger(ParseUrlController.name);
+
   constructor(
     @InjectModel(Region.name) private readonly regions: Model<RegionDocument>,
+    private readonly regionResolver: RegionResolverService,
   ) {}
 
   @Post()
@@ -152,6 +202,17 @@ export class ParseUrlController {
         return {
           ok: false,
           reason: `Region ${compositeId} ("${region.name}") is not in the local catalogue. Pick a region from the dropdown instead.`,
+        };
+      }
+      try {
+        await this.regionResolver.ensureResolved(doc._id);
+      } catch (err) {
+        this.logger.warn(
+          `Polygon resolve failed for ${doc._id} during parse-url: ${(err as Error).message}`,
+        );
+        return {
+          ok: false,
+          reason: `Could not resolve a polygon for ${doc.name}: ${(err as Error).message}`,
         };
       }
       out.center = doc.center;

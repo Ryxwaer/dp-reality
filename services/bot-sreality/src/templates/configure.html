@@ -182,6 +182,35 @@
       cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px;
     }
     .combo-chip-clear:hover { color: var(--error); }
+
+    details.card { padding: 0; }
+    details.card > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    details.card > summary::-webkit-details-marker { display: none; }
+    details.card > summary::after {
+      content: '+';
+      font-size: 20px; font-weight: 400; line-height: 1;
+      color: var(--text-muted);
+      transition: transform .12s ease;
+    }
+    details.card[open] > summary::after { content: '−'; }
+    details.card > .stack { padding: 0 20px 18px; }
+    details.card > summary .summary-hint {
+      font-weight: 400; font-size: 12px; color: var(--text-muted);
+      margin-left: 12px; flex: 1; text-align: right;
+    }
+
+    .checkbox-row {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none;
+    }
+    .checkbox-row input { width: 16px; height: 16px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -255,6 +284,49 @@
       </div>
     </div>
 
+    <details class="card" id="more-filters">
+      <summary>
+        More filters
+        <span class="summary-hint" id="more-filters-hint"></span>
+      </summary>
+      <div class="stack">
+        <div>
+          <label>Ownership</label>
+          <div class="pills" id="pills-ownership"></div>
+          <span class="help-inline">Listings without an ownership tag are excluded when any option is selected.</span>
+        </div>
+        <div>
+          <label>Building condition</label>
+          <div class="pills" id="pills-condition"></div>
+          <span class="help-inline">Match if any selected condition is present.</span>
+        </div>
+        <div>
+          <label>Furnished</label>
+          <div class="pills" id="pills-furnished"></div>
+        </div>
+        <div>
+          <label>Building material</label>
+          <div class="pills" id="pills-building-type"></div>
+        </div>
+        <div>
+          <label>Required amenities</label>
+          <div class="pills" id="pills-amenities"></div>
+          <span class="help-inline">Listing must have <em>every</em> selected amenity.</span>
+        </div>
+        <div>
+          <label>Required media</label>
+          <div class="pills" id="pills-media"></div>
+          <span class="help-inline">Floor plan, video tour, or 3D walk-through (Matterport).</span>
+        </div>
+        <div>
+          <label class="checkbox-row" for="exclude-rk">
+            <input id="exclude-rk" type="checkbox" />
+            Hide listings exclusively sold by a single agency
+          </label>
+        </div>
+      </div>
+    </details>
+
     <div id="form-msg"></div>
 
     <div class="footer">
@@ -276,6 +348,44 @@
       [33, 'Cottage (chata)'], [37, 'Family house'],
       [39, 'Villa'], [43, 'Cabin (chalupa)'],
       [44, 'Farm'], [48, 'Mobile home'], [54, 'Multi-generation']
+    ];
+
+    const OWNERSHIP_OPTS = [
+      ['personal', 'Personal'],
+      ['cooperative', 'Cooperative'],
+      ['state', 'State']
+    ];
+    const CONDITION_OPTS = [
+      ['new_building', 'New building'],
+      ['after_reconstruction', 'After reconstruction'],
+      ['before_reconstruction', 'Before reconstruction'],
+      ['in_construction', 'In construction'],
+      ['low_energy', 'Low energy']
+    ];
+    const FURNISHED_OPTS = [
+      ['furnished', 'Furnished'],
+      ['partly_furnished', 'Partly'],
+      ['not_furnished', 'Unfurnished']
+    ];
+    const BUILDING_TYPE_OPTS = [
+      ['brick', 'Brick'],
+      ['panel', 'Panel'],
+      ['wooden', 'Wooden']
+    ];
+    const AMENITY_OPTS = [
+      ['balcony', 'Balcony'],
+      ['terrace', 'Terrace'],
+      ['loggia', 'Loggia'],
+      ['cellar', 'Cellar'],
+      ['elevator', 'Elevator'],
+      ['parking_lots', 'Parking'],
+      ['garage', 'Garage'],
+      ['basin', 'Pool']
+    ];
+    const MEDIA_OPTS = [
+      ['floor_plan', 'Floor plan'],
+      ['video', 'Video'],
+      ['matterport', '3D walk-through']
     ];
 
     const params = new URLSearchParams(location.search);
@@ -328,8 +438,74 @@
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
       formMsg: document.getElementById('form-msg'),
-      submitBtn: document.getElementById('submit-btn')
+      submitBtn: document.getElementById('submit-btn'),
+      moreFilters: document.getElementById('more-filters'),
+      moreFiltersHint: document.getElementById('more-filters-hint'),
+      pillsOwnership: document.getElementById('pills-ownership'),
+      pillsCondition: document.getElementById('pills-condition'),
+      pillsFurnished: document.getElementById('pills-furnished'),
+      pillsBuildingType: document.getElementById('pills-building-type'),
+      pillsAmenities: document.getElementById('pills-amenities'),
+      pillsMedia: document.getElementById('pills-media'),
+      excludeRk: document.getElementById('exclude-rk')
     };
+
+    const moreFilters = {
+      ownership: new Set(),
+      condition: new Set(),
+      furnished: new Set(),
+      building_type: new Set(),
+      amenities: new Set(),
+      media: new Set()
+    };
+
+    function renderPillGroup(host, opts, selectedSet) {
+      host.innerHTML = '';
+      for (const [val, label] of opts) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pill';
+        b.textContent = label;
+        b.dataset.value = val;
+        b.setAttribute('aria-pressed', selectedSet.has(val) ? 'true' : 'false');
+        b.addEventListener('click', () => {
+          if (selectedSet.has(val)) selectedSet.delete(val);
+          else selectedSet.add(val);
+          b.setAttribute('aria-pressed', selectedSet.has(val) ? 'true' : 'false');
+          updateMoreFiltersHint();
+          notifyResize();
+        });
+        host.appendChild(b);
+      }
+    }
+
+    function totalMoreFilters() {
+      let n = 0;
+      for (const k in moreFilters) n += moreFilters[k].size;
+      if (els.excludeRk.checked) n += 1;
+      return n;
+    }
+
+    function updateMoreFiltersHint() {
+      const n = totalMoreFilters();
+      els.moreFiltersHint.textContent = n > 0 ? n + ' active' : '';
+    }
+
+    function renderMoreFilters() {
+      renderPillGroup(els.pillsOwnership, OWNERSHIP_OPTS, moreFilters.ownership);
+      renderPillGroup(els.pillsCondition, CONDITION_OPTS, moreFilters.condition);
+      renderPillGroup(els.pillsFurnished, FURNISHED_OPTS, moreFilters.furnished);
+      renderPillGroup(els.pillsBuildingType, BUILDING_TYPE_OPTS, moreFilters.building_type);
+      renderPillGroup(els.pillsAmenities, AMENITY_OPTS, moreFilters.amenities);
+      renderPillGroup(els.pillsMedia, MEDIA_OPTS, moreFilters.media);
+      updateMoreFiltersHint();
+    }
+
+    els.excludeRk.addEventListener('change', () => {
+      updateMoreFiltersHint();
+      notifyResize();
+    });
+    els.moreFilters.addEventListener('toggle', () => notifyResize());
 
     let centerSelected = null; // { id, region_typ, name, label, lat, lon }
 
@@ -481,6 +657,30 @@
         els.radius.value = String(p.radius_km);
         showCenterChip();
       }
+      const moreKeys = {
+        ownership: 'ownership_in',
+        condition: 'condition_in',
+        furnished: 'furnished_in',
+        building_type: 'building_type_in',
+        amenities: 'amenities_all',
+        media: 'media_required'
+      };
+      let anyMore = false;
+      for (const k in moreKeys) {
+        const arr = p[moreKeys[k]];
+        if (Array.isArray(arr) && arr.length) {
+          moreFilters[k] = new Set(arr);
+          anyMore = true;
+        }
+      }
+      if (typeof p.exclude_rk_exclusive === 'boolean') {
+        els.excludeRk.checked = p.exclude_rk_exclusive;
+        if (p.exclude_rk_exclusive) anyMore = true;
+      }
+      if (anyMore) {
+        renderMoreFilters();
+        els.moreFilters.open = true;
+      }
     }
 
     async function loadExisting() {
@@ -519,6 +719,23 @@
         els.radius.value = String(c.radius_km);
         showCenterChip();
       }
+      const loadMore = {
+        ownership: c.ownership_in,
+        condition: c.condition_in,
+        furnished: c.furnished_in,
+        building_type: c.building_type_in,
+        amenities: c.amenities_all,
+        media: c.media_required
+      };
+      let anyMore = false;
+      for (const k in loadMore) {
+        moreFilters[k] = new Set(Array.isArray(loadMore[k]) ? loadMore[k] : []);
+        if (moreFilters[k].size) anyMore = true;
+      }
+      els.excludeRk.checked = !!c.exclude_rk_exclusive;
+      if (c.exclude_rk_exclusive) anyMore = true;
+      renderMoreFilters();
+      if (anyMore) els.moreFilters.open = true;
     }
 
     function showImportMsg(kind, text) {
@@ -575,7 +792,14 @@
           ? { type: 'Point', coordinates: [centerSelected.lon, centerSelected.lat] }
           : null,
         radius_km: hasRadius ? radiusVal : null,
-        region_label: hasRadius ? (centerSelected.label || null) : null
+        region_label: hasRadius ? (centerSelected.label || null) : null,
+        ownership_in: Array.from(moreFilters.ownership),
+        condition_in: Array.from(moreFilters.condition),
+        furnished_in: Array.from(moreFilters.furnished),
+        building_type_in: Array.from(moreFilters.building_type),
+        amenities_all: Array.from(moreFilters.amenities),
+        media_required: Array.from(moreFilters.media),
+        exclude_rk_exclusive: !!els.excludeRk.checked
       };
     }
 
@@ -665,6 +889,7 @@
     });
 
     renderDispo();
+    renderMoreFilters();
     loadExisting().then(notifyResize);
   })();
   </script>
