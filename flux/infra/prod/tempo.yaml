@@ -127,6 +127,15 @@ spec:
               - messaging.system
               - server.address
               - net.peer.name
+            # Tempo ≥ 2.7 resolves DB-client spans through this list
+            # *before* falling through to `peer_attributes`. The default
+            # is `[db.namespace, db.name, db.system]` which is precisely
+            # what produces the noisy `dp-reality` / `admin` nodes (one
+            # per logical database) for the same physical pod. Forcing
+            # `db.system` only makes every Mongo edge land on a single
+            # `mongodb` node.
+            database_name_attributes:
+              - db.system
           span_metrics:
             # `target_info` adds a once-per-service info series carrying
             # the resource attributes (service.version, deployment.env,
