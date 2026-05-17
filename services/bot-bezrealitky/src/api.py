@@ -239,10 +239,48 @@ def build_router() -> APIRouter:
             out.append({
                 "osm_id": rec["osm_id"],
                 "name": rec.get("name"),
+                "display_name": rec.get("display_name"),
                 "lat": rec.get("lat"),
                 "lon": rec.get("lon"),
             })
         return JSONResponse({"results": out})
+
+    @router.get("/regions/search")
+    async def regions_search(
+        request: Request,
+        q: str = Query(..., min_length=1, max_length=80),
+        limit: int = Query(8, ge=1, le=20),
+    ) -> JSONResponse:
+        """Cache-first region search.
+
+        Returns matches from `bezrealitky_geo` immediately; if fewer
+        than `limit` hits are local, falls back to Nominatim (CZ + SK,
+        relations only). Selected hits are cached on follow-up
+        `/regions/lookup`, so repeated searches stay local.
+        """
+        db, _ = _state(request)
+        local = await geo.search_local(db, q, limit)
+        local_ids = {r["osm_id"] for r in local}
+        results = list(local)
+        if len(results) < limit:
+            remote = await geo.search_nominatim(q, limit=limit)
+            for rec in remote:
+                if rec["osm_id"] in local_ids:
+                    continue
+                results.append(rec)
+                local_ids.add(rec["osm_id"])
+                if len(results) >= limit:
+                    break
+        return JSONResponse({"results": [
+            {
+                "osm_id": r["osm_id"],
+                "name": r.get("name"),
+                "display_name": r.get("display_name"),
+                "lat": r.get("lat"),
+                "lon": r.get("lon"),
+            }
+            for r in results
+        ]})
 
     @router.get("/configs/{config_id}")
     async def get_config(

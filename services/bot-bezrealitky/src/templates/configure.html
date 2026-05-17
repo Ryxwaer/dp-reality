@@ -55,6 +55,7 @@
     body { padding: 0; }
     html.standalone body { padding: 32px 24px; max-width: 760px; margin: 0 auto; }
     *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
 
     .stack > * + * { margin-top: 16px; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -177,6 +178,36 @@
       line-height: 1;
       padding: 0 4px;
     }
+
+    .grid-loc {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: start;
+    }
+    @media (max-width: 480px) {
+      .grid-loc { grid-template-columns: 1fr; }
+    }
+
+    .combo { position: relative; }
+    .combo-list {
+      position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      max-height: 240px; overflow-y: auto;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .combo-list .opt {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .combo-list .opt:last-child { border-bottom: none; }
+    .combo-list .opt:hover { background: var(--surface-2); }
+    .combo-list .opt .display { color: var(--text-muted); font-size: 11px; }
+    .combo-list .empty { padding: 8px 12px; font-size: 12px; color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -314,19 +345,27 @@
       </div>
 
       <div>
-        <label>Location</label>
-        <div id="region-chips" class="chips" aria-live="polite">
-          <span id="region-empty" class="help-inline" style="margin: 0">No region selected — listings from anywhere in Czechia will match.</span>
-        </div>
-        <div class="grid-2" style="margin-top: 10px">
+        <label for="region-search">Location</label>
+        <span class="help-inline" style="margin-top: 0; margin-bottom: 6px">Listings within any region's outline (plus the buffer) will match. Leave empty to match all of Czechia.</span>
+        <div class="grid-loc">
+          <div class="combo">
+            <input
+              id="region-search"
+              class="input"
+              type="text"
+              placeholder="Type to search (e.g. Brno, Praha 5, Jihomoravský kraj)…"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-controls="region-list"
+            />
+            <div id="region-list" class="combo-list" role="listbox" hidden></div>
+          </div>
           <div>
-            <label for="radius">Radius (km)</label>
-            <input id="radius" class="input" type="number" min="1" max="200" step="1" placeholder="—" />
-            <span class="help-inline">Distance from each selected region's centre. Required when at least one region is selected.</span>
+            <input id="radius" class="input" type="number" min="0" max="200" step="1" placeholder="Buffer (km)" aria-label="Buffer in kilometres" />
           </div>
-          <div style="display:flex;align-items:flex-end">
-            <button id="region-clear" type="button" class="btn btn-ghost">Clear regions</button>
-          </div>
+        </div>
+        <div id="region-chips" class="chips" style="margin-top: 10px" aria-live="polite">
+          <span id="region-empty" class="help-inline" style="margin: 0">No region selected.</span>
         </div>
       </div>
     </div>
@@ -383,7 +422,8 @@
       smax: document.getElementById('smax'),
       regionChips: document.getElementById('region-chips'),
       regionEmpty: document.getElementById('region-empty'),
-      regionClear: document.getElementById('region-clear'),
+      regionSearch: document.getElementById('region-search'),
+      regionList: document.getElementById('region-list'),
       radius: document.getElementById('radius'),
       submit: document.getElementById('submit-btn'),
       cancel: document.getElementById('cancel-btn'),
@@ -434,16 +474,104 @@
         x.addEventListener('click', () => {
           regions = regions.filter((rr) => rr.osm_id !== r.osm_id);
           renderRegions();
+          syncRegionInputState();
           notifyResize();
         });
         span.appendChild(x);
         els.regionChips.appendChild(span);
       });
     }
-    els.regionClear.addEventListener('click', () => {
-      regions = [];
+    const MAX_REGIONS = 3;
+
+    function syncRegionInputState() {
+      const full = regions.length >= MAX_REGIONS;
+      els.regionSearch.disabled = full;
+      els.regionSearch.placeholder = full
+        ? 'Maximum of ' + MAX_REGIONS + ' regions reached — remove one to add another.'
+        : 'Type to search (e.g. Brno, Praha 5, Jihomoravský kraj)…';
+    }
+
+    function addRegion(rec) {
+      if (!rec || rec.osm_id == null) return;
+      if (regions.some((r) => r.osm_id === rec.osm_id)) return;
+      if (regions.length >= MAX_REGIONS) return;
+      regions.push({
+        osm_id: rec.osm_id,
+        name: rec.name || ('OSM ' + rec.osm_id),
+        display_name: rec.display_name || rec.name || null,
+        lat: rec.lat,
+        lon: rec.lon
+      });
       renderRegions();
+      syncRegionInputState();
       notifyResize();
+    }
+
+    function hideRegionList() {
+      els.regionList.hidden = true;
+      els.regionList.innerHTML = '';
+      notifyResize();
+    }
+    function renderRegionList(hits) {
+      els.regionList.innerHTML = '';
+      if (!hits || !hits.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No matches.';
+        els.regionList.appendChild(empty);
+      } else {
+        for (const h of hits) {
+          const opt = document.createElement('div');
+          opt.className = 'opt';
+          opt.setAttribute('role', 'option');
+          const name = document.createElement('div');
+          name.textContent = h.name || ('OSM ' + h.osm_id);
+          opt.appendChild(name);
+          if (h.display_name && h.display_name !== h.name) {
+            const sub = document.createElement('div');
+            sub.className = 'display';
+            sub.textContent = h.display_name;
+            opt.appendChild(sub);
+          }
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            addRegion(h);
+            els.regionSearch.value = '';
+            hideRegionList();
+          });
+          els.regionList.appendChild(opt);
+        }
+      }
+      els.regionList.hidden = false;
+      notifyResize();
+    }
+
+    let regionTimer = null;
+    let regionSeq = 0;
+    async function runRegionSearch(q) {
+      const seq = ++regionSeq;
+      const url = endpoint('/regions/search') + '?q=' + encodeURIComponent(q);
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) { hideRegionList(); return; }
+      const data = await res.json();
+      if (seq !== regionSeq) return;
+      renderRegionList(data && data.results ? data.results : []);
+    }
+    els.regionSearch.addEventListener('input', () => {
+      const q = els.regionSearch.value.trim();
+      if (regionTimer) clearTimeout(regionTimer);
+      if (q.length < 2) { hideRegionList(); return; }
+      regionTimer = setTimeout(() => runRegionSearch(q), 220);
+    });
+    els.regionSearch.addEventListener('focus', () => {
+      const q = els.regionSearch.value.trim();
+      if (q.length >= 2) runRegionSearch(q);
+    });
+    els.regionSearch.addEventListener('blur', () => {
+      setTimeout(hideRegionList, 150);
+    });
+    els.regionSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { hideRegionList(); }
     });
 
     async function lookupRegions(osmIds) {
@@ -504,7 +632,9 @@
           } catch (err) {
             regions = c.region_osm_ids.map((id) => ({ osm_id: id, name: 'OSM ' + id }));
           }
+          regions = regions.slice(0, MAX_REGIONS);
           renderRegions();
+          syncRegionInputState();
         }
       } catch {}
     }
@@ -546,7 +676,9 @@
             showImportMsg('error', 'Region lookup failed: ' + err.message);
             return;
           }
+          regions = regions.slice(0, MAX_REGIONS);
           renderRegions();
+          syncRegionInputState();
         }
         showImportMsg('success', 'Filters imported from URL.');
         els.importUrl.value = '';
@@ -667,6 +799,7 @@
     });
 
     renderRegions();
+    syncRegionInputState();
     loadExisting().then(notifyResize);
   })();
   </script>

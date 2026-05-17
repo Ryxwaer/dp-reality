@@ -19,11 +19,15 @@ from __future__ import annotations
 import logging
 import math
 import re
-from typing import Any, Iterable
+import unicodedata
+from typing import Any, Callable, Iterable
 
 import httpx
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import UpdateOne
+from pyproj import Transformer
+from shapely.geometry import Point, shape
+from shapely.ops import transform, unary_union
 
 from .config import settings
 
@@ -33,6 +37,13 @@ GEO_COLLECTION = "bezrealitky_geo"
 
 _BEZREALITKY_GRAPHQL = "https://api.bezrealitky.cz/graphql/"
 _NOMINATIM_LOOKUP = "https://nominatim.openstreetmap.org/lookup"
+_NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+
+
+def _normalise(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.casefold().strip()
 
 _CZECH_REGIONS_QUERY = """
 query CzechRegions($locale: Locale!) {
@@ -53,12 +64,18 @@ _BOUNDARY_POINT_RE = re.compile(r"(-?\d+\.\d+)\s+(-?\d+\.\d+)")
 async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     coll = db[GEO_COLLECTION]
     await coll.create_index("osm_id", unique=True, background=True, name="osm_id_unique")
-    await coll.create_index("name", background=True, name="name")
+    await coll.create_index("name_normalised", background=True, name="name_normalised")
     await coll.create_index([("location", "2dsphere")], background=True, name="location_2dsphere")
 
 
-def _projection() -> dict[str, int]:
-    return {"_id": 0, "osm_id": 1, "name": 1, "uri": 1, "type": 1, "location": 1}
+def _projection(*, with_geometry: bool = False) -> dict[str, int]:
+    base = {
+        "_id": 0, "osm_id": 1, "name": 1, "display_name": 1,
+        "uri": 1, "type": 1, "location": 1,
+    }
+    if with_geometry:
+        base["geometry"] = 1
+    return base
 
 
 def _doc_to_record(doc: dict[str, Any]) -> dict[str, Any]:
@@ -66,27 +83,33 @@ def _doc_to_record(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "osm_id": doc.get("osm_id"),
         "name": doc.get("name"),
+        "display_name": doc.get("display_name"),
         "uri": doc.get("uri"),
         "type": doc.get("type"),
         "lat": coords[1],
         "lon": coords[0],
+        "geometry": doc.get("geometry"),
     }
 
 
 async def find_by_osm_id(
-    db: AsyncIOMotorDatabase, osm_id: int
+    db: AsyncIOMotorDatabase, osm_id: int, *, with_geometry: bool = False
 ) -> dict[str, Any] | None:
-    doc = await db[GEO_COLLECTION].find_one({"osm_id": osm_id}, projection=_projection())
+    doc = await db[GEO_COLLECTION].find_one(
+        {"osm_id": osm_id}, projection=_projection(with_geometry=with_geometry)
+    )
     return _doc_to_record(doc) if doc else None
 
 
 async def find_many(
-    db: AsyncIOMotorDatabase, osm_ids: Iterable[int]
+    db: AsyncIOMotorDatabase, osm_ids: Iterable[int], *, with_geometry: bool = False
 ) -> dict[int, dict[str, Any]]:
     ids = list({int(x) for x in osm_ids})
     if not ids:
         return {}
-    cursor = db[GEO_COLLECTION].find({"osm_id": {"$in": ids}}, projection=_projection())
+    cursor = db[GEO_COLLECTION].find(
+        {"osm_id": {"$in": ids}}, projection=_projection(with_geometry=with_geometry)
+    )
     out: dict[int, dict[str, Any]] = {}
     async for doc in cursor:
         rec = _doc_to_record(doc)
@@ -105,21 +128,35 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r_km * math.asin(math.sqrt(a))
 
 
-def _centroid_from_boundary(boundary: str) -> tuple[float, float] | None:
-    """Compute a representative centre from a `((lon lat,lon lat,...))` polygon string.
+def _polygon_from_boundary(boundary: str) -> dict[str, Any] | None:
+    """Parse Bezrealitky's `((lon lat,lon lat,...))` boundary into GeoJSON Polygon.
 
-    Bezrealitky's `boundary` is a flat WKT-style coordinate list (lon lat
-    pairs separated by commas). We average them — fine as an anchor for
-    radius matching where sub-kilometre precision is not the goal.
+    Confirmed by inspection that the response is a single closed ring per
+    region (no multi-ring or multi-polygon entries). We preserve vertex
+    order so the result can be projected and buffered for matching.
     """
-    points: list[tuple[float, float]] = []
+    ring: list[list[float]] = []
     for match in _BOUNDARY_POINT_RE.finditer(boundary):
         lon, lat = float(match.group(1)), float(match.group(2))
-        points.append((lon, lat))
-    if not points:
+        ring.append([lon, lat])
+    if len(ring) < 4:
         return None
-    lon = sum(p[0] for p in points) / len(points)
-    lat = sum(p[1] for p in points) / len(points)
+    if ring[0] != ring[-1]:
+        ring.append(list(ring[0]))
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def _centroid_of_polygon(poly: dict[str, Any]) -> tuple[float, float] | None:
+    coords: list[list[float]] = []
+    if poly.get("type") == "Polygon":
+        coords = poly["coordinates"][0]
+    elif poly.get("type") == "MultiPolygon":
+        for part in poly["coordinates"]:
+            coords.extend(part[0])
+    if not coords:
+        return None
+    lon = sum(p[0] for p in coords) / len(coords)
+    lat = sum(p[1] for p in coords) / len(coords)
     return lon, lat
 
 
@@ -154,22 +191,31 @@ async def _seed_from_bezrealitky(db: AsyncIOMotorDatabase) -> int:
         if osm_id_raw is None:
             continue
         boundary = row.get("boundary") or ""
-        center = _centroid_from_boundary(boundary)
+        polygon = _polygon_from_boundary(boundary)
+        if polygon is None:
+            raise RuntimeError(
+                f"could not parse polygon for kraj {row.get('uri')!r} (osm_id={osm_id_raw})"
+            )
+        center = _centroid_of_polygon(polygon)
         if center is None:
             raise RuntimeError(
-                f"could not derive centre for kraj {row.get('uri')!r} (osm_id={osm_id_raw})"
+                f"empty polygon for kraj {row.get('uri')!r} (osm_id={osm_id_raw})"
             )
         lon, lat = center
+        name = row.get("name") or ""
         operations.append(
             UpdateOne(
                 {"osm_id": int(osm_id_raw)},
                 {
                     "$set": {
                         "osm_id": int(osm_id_raw),
-                        "name": row.get("name"),
+                        "name": name,
+                        "name_normalised": _normalise(name),
+                        "display_name": name,
                         "uri": row.get("uri"),
                         "type": row.get("type"),
                         "location": {"type": "Point", "coordinates": [lon, lat]},
+                        "geometry": polygon,
                     }
                 },
                 upsert=True,
@@ -181,54 +227,156 @@ async def _seed_from_bezrealitky(db: AsyncIOMotorDatabase) -> int:
     return len(result.upserted_ids or {}) + result.modified_count
 
 
+def _row_to_record(row: dict[str, Any], osm_id: int) -> dict[str, Any]:
+    addr = row.get("address") or {}
+    name = (
+        row.get("name")
+        or addr.get("city")
+        or addr.get("town")
+        or addr.get("village")
+        or addr.get("municipality")
+        or ""
+    )
+    geometry = row.get("geojson")
+    if geometry and geometry.get("type") not in {"Polygon", "MultiPolygon"}:
+        geometry = None
+    return {
+        "osm_id": int(osm_id),
+        "name": name,
+        "uri": None,
+        "type": row.get("type"),
+        "lat": float(row["lat"]),
+        "lon": float(row["lon"]),
+        "display_name": row.get("display_name"),
+        "geometry": geometry,
+    }
+
+
 async def resolve_via_nominatim(osm_id: int) -> dict[str, Any]:
-    """Resolve an OSM relation id to {name, lat, lon} via Nominatim.
+    """Resolve an OSM relation id to a record (with polygon when available).
 
     Raises if the lookup fails or returns nothing — callers must surface
     that to the user rather than silently storing a config that can't
     match listings by radius.
     """
     headers = {"User-Agent": settings.geo_user_agent, "Accept": "application/json"}
-    params = {"osm_ids": f"R{osm_id}", "format": "json", "addressdetails": "1"}
+    params = {
+        "osm_ids": f"R{osm_id}",
+        "format": "json",
+        "addressdetails": "1",
+        "polygon_geojson": "1",
+    }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(_NOMINATIM_LOOKUP, params=params, headers=headers)
         resp.raise_for_status()
         rows = resp.json()
     if not rows:
         raise LookupError(f"Nominatim has no record for relation {osm_id}")
-    row = rows[0]
-    addr = row.get("address") or {}
-    return {
-        "osm_id": int(osm_id),
-        "name": row.get("name") or addr.get("city") or addr.get("town") or addr.get("village"),
-        "uri": None,
-        "type": row.get("type"),
-        "lat": float(row["lat"]),
-        "lon": float(row["lon"]),
-        "display_name": row.get("display_name"),
-    }
+    return _row_to_record(rows[0], osm_id)
 
 
 async def upsert_resolved(
     db: AsyncIOMotorDatabase, record: dict[str, Any]
 ) -> None:
+    name = record.get("name") or ""
+    payload: dict[str, Any] = {
+        "osm_id": record["osm_id"],
+        "name": name,
+        "name_normalised": _normalise(name),
+        "uri": record.get("uri"),
+        "type": record.get("type"),
+        "display_name": record.get("display_name"),
+        "location": {
+            "type": "Point",
+            "coordinates": [record["lon"], record["lat"]],
+        },
+    }
+    if record.get("geometry"):
+        payload["geometry"] = record["geometry"]
     await db[GEO_COLLECTION].update_one(
         {"osm_id": record["osm_id"]},
-        {
-            "$set": {
-                "osm_id": record["osm_id"],
-                "name": record.get("name"),
-                "uri": record.get("uri"),
-                "type": record.get("type"),
-                "display_name": record.get("display_name"),
-                "location": {
-                    "type": "Point",
-                    "coordinates": [record["lon"], record["lat"]],
-                },
-            }
-        },
+        {"$set": payload},
         upsert=True,
     )
+
+
+async def search_local(
+    db: AsyncIOMotorDatabase, query: str, limit: int
+) -> list[dict[str, Any]]:
+    needle = _normalise(query)
+    if not needle:
+        return []
+    coll = db[GEO_COLLECTION]
+    exact = [
+        _doc_to_record(d)
+        async for d in coll.find(
+            {"name_normalised": needle}, projection=_projection()
+        ).limit(limit)
+    ]
+    if len(exact) >= limit:
+        return exact
+    seen = {r["osm_id"] for r in exact}
+    prefix_cursor = coll.find(
+        {"name_normalised": {"$regex": "^" + re.escape(needle)}},
+        projection=_projection(),
+    ).limit(limit * 2)
+    async for doc in prefix_cursor:
+        rec = _doc_to_record(doc)
+        if rec["osm_id"] in seen:
+            continue
+        exact.append(rec)
+        seen.add(rec["osm_id"])
+        if len(exact) >= limit:
+            break
+    return exact
+
+
+async def search_nominatim(
+    query: str, limit: int = 8
+) -> list[dict[str, Any]]:
+    """Free-text search via Nominatim, restricted to CZ + SK administrative units.
+
+    Returns the same record shape as `find_by_osm_id` so the UI can
+    treat both sources uniformly. Caller is responsible for caching
+    selected hits via `upsert_resolved` once the user picks one.
+    """
+    headers = {"User-Agent": settings.geo_user_agent, "Accept": "application/json"}
+    params = {
+        "q": query,
+        "format": "json",
+        "addressdetails": "1",
+        "limit": str(limit),
+        "countrycodes": "cz,sk",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(_NOMINATIM_SEARCH, params=params, headers=headers)
+        resp.raise_for_status()
+        rows = resp.json()
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if row.get("osm_type") != "relation":
+            continue
+        osm_id = row.get("osm_id")
+        if osm_id is None:
+            continue
+        addr = row.get("address") or {}
+        name = (
+            row.get("name")
+            or addr.get("city")
+            or addr.get("town")
+            or addr.get("village")
+            or addr.get("municipality")
+            or ""
+        )
+        out.append({
+            "osm_id": int(osm_id),
+            "name": name,
+            "display_name": row.get("display_name"),
+            "type": row.get("type"),
+            "lat": float(row["lat"]),
+            "lon": float(row["lon"]),
+        })
+    return out
 
 
 async def resolve_or_fetch(
@@ -267,3 +415,52 @@ async def seed_if_needed(db: AsyncIOMotorDatabase) -> None:
 
     written = await _seed_from_bezrealitky(db)
     logger.info("bezrealitky_geo seed: %d kraje upserted from bezrealitky API", written)
+
+
+# ---------------------------------------------------------------------------
+# Region filter — replicates bezrealitky.cz's `polygonBuffer=N` semantics.
+# A listing matches if its GPS point falls inside the union of all selected
+# region polygons expanded outward by `radius_km`. Regions resolved without a
+# polygon (rare — node-level OSM relations) degrade to a centre-point buffer,
+# which collapses to the legacy haversine behaviour.
+
+# UTM zone 33N covers Czechia + Slovakia with sub-metre projection error.
+_METRIC_CRS = "EPSG:32633"
+_TO_METRIC = Transformer.from_crs("EPSG:4326", _METRIC_CRS, always_xy=True).transform
+_TO_WGS84 = Transformer.from_crs(_METRIC_CRS, "EPSG:4326", always_xy=True).transform
+
+
+def build_region_filter(
+    records: list[dict[str, Any]], radius_km: int
+) -> Callable[[float, float], bool]:
+    """Return a `(lon, lat) -> bool` predicate for radius matching.
+
+    For each region record we project its geometry (or fall back to its
+    centre point) into UTM 33N, buffer by `radius_km * 1000` metres,
+    union the result, and check listings against that single shape.
+    Doing the projection once per cycle keeps the per-listing path to a
+    cheap point-in-polygon test.
+    """
+    if radius_km < 0:
+        raise ValueError("radius_km must be non-negative")
+    geoms = []
+    for rec in records:
+        gj = rec.get("geometry")
+        if gj:
+            wgs = shape(gj)
+        else:
+            lat, lon = rec.get("lat"), rec.get("lon")
+            if lat is None or lon is None:
+                continue
+            wgs = Point(float(lon), float(lat))
+        metric = transform(_TO_METRIC, wgs)
+        geoms.append(metric.buffer(radius_km * 1000.0))
+    if not geoms:
+        return lambda _lon, _lat: False
+    union_metric = unary_union(geoms)
+
+    def predicate(lon: float, lat: float) -> bool:
+        x, y = _TO_METRIC(lon, lat)
+        return union_metric.covers(Point(x, y))
+
+    return predicate

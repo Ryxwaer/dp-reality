@@ -1,37 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
-from .geo import haversine_km
 from .models import BotConfig, Listing
 
-
-def _in_radius(
-    listing: Listing,
-    radius_km: int,
-    region_centers: list[tuple[float, float]],
-) -> bool:
-    if listing.gps is None:
-        return False
-    lon, lat = listing.gps.coordinates[0], listing.gps.coordinates[1]
-    for c_lat, c_lon in region_centers:
-        if haversine_km(lat, lon, c_lat, c_lon) <= radius_km:
-            return True
-    return False
+RegionFilter = Callable[[float, float], bool]
 
 
 def matches(
     config: BotConfig,
     listing: Listing,
     *,
-    region_centers: list[tuple[float, float]] | None = None,
+    region_filter: RegionFilter | None = None,
 ) -> bool:
     """Decide whether a listing should produce a notification for this config.
 
-    `region_centers` is the precomputed list of (lat, lon) anchors for
-    `config.region_osm_ids`, resolved by the cycle once per config.
-    Fail-closed on the radius filter: if the user asked for a radius and
-    the listing has no GPS, we cannot prove inclusion and refuse to notify.
+    `region_filter`, when provided, is a precomputed `(lon, lat) -> bool`
+    predicate that encodes "any selected region polygon, expanded outward
+    by `radius_km`" — matching bezrealitky.cz's own `polygonBuffer`
+    semantics. Fail-closed if the listing has no GPS: we cannot prove
+    inclusion and refuse to notify.
     """
     if config.offer_type and listing.offer_type != config.offer_type:
         return False
@@ -61,9 +49,10 @@ def matches(
         if listing.surface_m2 is None or listing.surface_m2 > config.surface_max:
             return False
     if config.region_osm_ids and config.radius_km is not None:
-        if not region_centers:
+        if region_filter is None or listing.gps is None:
             return False
-        if not _in_radius(listing, config.radius_km, region_centers):
+        lon, lat = listing.gps.coordinates[0], listing.gps.coordinates[1]
+        if not region_filter(lon, lat):
             return False
     return True
 

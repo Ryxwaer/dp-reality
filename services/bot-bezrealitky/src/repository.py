@@ -26,10 +26,12 @@ NOTIFICATIONS_COLLECTION = "notifications"
 MODULE_REGISTRY_COLLECTION = "module_registry"
 META_COLLECTION = "bezrealitky_meta"
 
-# Bumped whenever the persisted listing/config schema changes
-# incompatibly. `migrate()` drops both collections and stamps this
-# value; the bot then repopulates from the next scrape cycle onward.
-_SCHEMA_VERSION = 2
+# Bumped whenever the persisted listing/config/geo schema changes
+# incompatibly. `migrate()` drops the affected collections and stamps
+# this value; the bot then repopulates from the next scrape cycle and
+# the next geo seed.
+_SCHEMA_VERSION = 4
+_GEO_COLLECTION = "bezrealitky_geo"
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +77,11 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
 
     await db[LISTINGS_COLLECTION].drop()
     await db[CONFIG_COLLECTION].drop()
+    await db[_GEO_COLLECTION].drop()
     logger.info(
-        "migrate: dropped %s and %s (schema %d -> %d)",
-        LISTINGS_COLLECTION, CONFIG_COLLECTION, current, _SCHEMA_VERSION,
+        "migrate: dropped %s, %s, %s (schema %d -> %d)",
+        LISTINGS_COLLECTION, CONFIG_COLLECTION, _GEO_COLLECTION,
+        current, _SCHEMA_VERSION,
     )
     await db[META_COLLECTION].update_one(
         {"_id": "schema"},

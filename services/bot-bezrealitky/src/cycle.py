@@ -77,20 +77,22 @@ async def _persist_detail(
             await repository.update_listing_detail(db, listing)
 
 
-async def _resolve_region_centers(
+async def _build_region_filter(
     db: AsyncIOMotorDatabase, cfg: BotConfig
-) -> list[tuple[float, float]]:
-    """Look up every (cached) anchor for `cfg.region_osm_ids`.
+) -> matcher.RegionFilter | None:
+    """Compose the polygon+buffer predicate for this config, once per cycle.
 
     Configs are required to have all referenced OSM ids in
-    `bezrealitky_geo` at save time (api.py enforces it). If a row has
-    since been deleted manually, the matcher's fail-closed posture
-    skips the radius filter for that listing rather than match-all.
+    `bezrealitky_geo` at save time (api.py enforces it). Missing entries
+    are skipped silently here; the matcher's fail-closed posture rejects
+    listings rather than match-all.
     """
     if not cfg.region_osm_ids or cfg.radius_km is None:
-        return []
-    records = await geo.find_many(db, cfg.region_osm_ids)
-    return [(r["lat"], r["lon"]) for r in records.values() if r.get("lat") and r.get("lon")]
+        return None
+    records = await geo.find_many(db, cfg.region_osm_ids, with_geometry=True)
+    if not records:
+        return None
+    return geo.build_region_filter(list(records.values()), cfg.radius_km)
 
 
 async def _match_and_notify(
@@ -112,11 +114,11 @@ async def _match_and_notify(
         except ValidationError as err:
             logger.warning("skip invalid config %s: %s", cfg_doc.get("_id"), err)
             continue
-        region_centers = await _resolve_region_centers(db, cfg)
+        region_filter = await _build_region_filter(db, cfg)
         config_id = str(cfg_doc["_id"])
         user_id = str(cfg_doc["user_id"])
         for listing in new_listings:
-            if matcher.matches(cfg, listing, region_centers=region_centers):
+            if matcher.matches(cfg, listing, region_filter=region_filter):
                 rows_by_user[user_id].append(
                     notifications.build_notification(
                         user_id=user_id,

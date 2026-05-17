@@ -5,6 +5,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
@@ -15,6 +18,34 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+
+  # Local-only Tempo single-binary so the OpenTelemetry SDKs in every
+  # service have a real OTLP/gRPC endpoint to push spans at while
+  # developing. Mirrors the production setup deployed via Flux
+  # (`flux/infra/prod/tempo.yaml`); see `dev/tempo.yaml` for the
+  # config rationale. The HTTP query API on :3200 is published so the
+  # operator can curl it from the host (e.g.
+  # `curl localhost:3200/api/search?tags=service.name%3Dbot-bezrealitky`)
+  # without needing a Grafana running locally.
+  tempo:
+    container_name: dp-reality-tempo
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./dev/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   bot-bazos:
     container_name: dp-reality-bot-bazos
@@ -39,21 +70,31 @@ services:
       BASE_URL: http://bot-bazos:8000
       SCRAPE_INTERVAL_MINUTES: 5
       SCRAPE_PAGES: 5
-      # Distributed tracing — points at the in-cluster Tempo when
-      # this stack runs alongside the K3s deployment, otherwise
-      # leave OTEL_EXPORTER_OTLP_ENDPOINT unset to make the SDK
-      # silently no-op (the legacy Portainer/Compose target has no
-      # local Tempo).
+      GEO_SEED_MODE: missing
+      # OpenTelemetry — see services/bot-bazos/src/telemetry.py.
+      # OTLP/gRPC is what Tempo expects; the SDK reads these env vars
+      # via opentelemetry-sdk's standard env-config support.
       OTEL_SERVICE_NAME: bot-bazos
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+    ports:
+      - "8001:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/bot-bazos/src
+          target: /app/src
+        - action: rebuild
+          path: ./services/bot-bazos/requirements.txt
 
   bot-sreality:
     container_name: dp-reality-bot-sreality
@@ -72,16 +113,27 @@ services:
       DISPLAY_NAME: Sreality.cz
       BASE_URL: http://bot-sreality:8000
       SCRAPE_INTERVAL_MINUTES: 10
+      # OpenTelemetry — see services/bot-sreality/src/telemetry.ts.
       OTEL_SERVICE_NAME: bot-sreality
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+    ports:
+      - "8002:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/bot-sreality/src
+        - action: rebuild
+          path: ./services/bot-sreality/package.json
 
   bot-bezrealitky:
     container_name: dp-reality-bot-bezrealitky
@@ -100,22 +152,35 @@ services:
       DISPLAY_NAME: Bezrealitky
       BASE_URL: http://bot-bezrealitky:8000
       SCRAPE_INTERVAL_MINUTES: 10
-      # Bezrealitky-specific anti-bot knobs (NFR-01-B). Stronger than
-      # the other two bots: per-page throttle, post-block backoff,
-      # detail-fetch cap. See services/bot-bezrealitky/src/config.py.
+      # Anti-bot countermeasures (NFR-01-B): per-page throttle,
+      # post-block backoff, detail-fetch cap.
       SCRAPE_THROTTLE_SECONDS_BETWEEN_PAGES: 2.0
       BACKOFF_MINUTES_ON_BLOCK: 30
       MAX_DETAIL_FETCHES_PER_CYCLE: 60
+      GEO_SEED_MODE: missing
+      GEO_USER_AGENT: "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
+      # OpenTelemetry — see services/bot-bezrealitky/src/telemetry.py.
       OTEL_SERVICE_NAME: bot-bezrealitky
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+    ports:
+      - "8003:8000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/bot-bezrealitky/src
+          target: /app/src
+        - action: rebuild
+          path: ./services/bot-bezrealitky/requirements.txt
 
   email-notifier:
     container_name: dp-reality-email-notifier
@@ -127,48 +192,76 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      MAIL_SMTP_SERVER: smtp.eu.mailgun.org
+      MAIL_SMTP_SERVER: mail.ryxwaer.com
       MAIL_SMTP_PORT: 587
       MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
       MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
-      MAIL_FROM_EMAIL: noreply@ryxwaer.com
-      APP_BASE_URL: https://reality.ryxwaer.com
+      MAIL_FROM_EMAIL: bot@ryxwaer.com
+      MAIL_ALLOWED_RECIPIENT_DOMAINS: ryxwaer.com
+      # Unsubscribe links in dev emails point at the locally-exposed BFF.
+      APP_BASE_URL: http://localhost:3000
       UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      # OpenTelemetry — see services/email-notifier/internal/telemetry.
       OTEL_SERVICE_NAME: email-notifier
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/email-notifier
 
   frontend:
     container_name: dp-reality-frontend
     build:
       context: .
-      dockerfile: services/frontend/Dockerfile
+      dockerfile: services/frontend/Dockerfile.dev
     pull_policy: build
-    image: dp-reality-frontend:latest
+    image: dp-reality-frontend-dev:latest
     environment:
       NUXT_MONGODB_URI: ${MONGODB_URI}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      # OpenTelemetry — see services/frontend/server/plugins/-1-telemetry.ts.
       OTEL_SERVICE_NAME: frontend
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod-compose,service.namespace=dp-reality
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+    ports:
+      - "3000:3000"
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - dp-reality
     restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: ./services/frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .output/
+            - .nuxt/
+        - action: rebuild
+          path: ./services/frontend/package.json
+        - action: rebuild
+          path: ./services/frontend/bun.lock
 
 volumes:
   rabbitmq_data:
+  tempo_data:
 
 networks:
   dp-reality:
