@@ -5,7 +5,8 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
-    "dump:regions": "bun run scripts/dump-regions.ts"
+    "dump:regions": "bun run scripts/dump-regions.ts",
+    "backfill:listings": "bun run scripts/backfill-listings.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.21",
