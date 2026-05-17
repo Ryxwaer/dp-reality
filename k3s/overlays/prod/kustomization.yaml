@@ -18,7 +18,7 @@ images:
   - name: ghcr.io/ryxwaer/dp-reality/bot-sreality
     newTag: main-42e31b59-1779012542 # {"$imagepolicy": "flux-system:bot-sreality:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/bot-bezrealitky
-    newTag: main-e4682e53-1778968644 # {"$imagepolicy": "flux-system:bot-bezrealitky:tag"}
+    newTag: main-42e31b59-1779012547 # {"$imagepolicy": "flux-system:bot-bezrealitky:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
     newTag: main-42e31b59-1779012543 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
