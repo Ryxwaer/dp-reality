@@ -108,7 +108,7 @@ def _format_filter_summary(
 async def _count_matching(
     db: AsyncIOMotorDatabase,
     cfg: BotConfig,
-    region_centers: list[tuple[float, float]],
+    region_filter: matcher.RegionFilter | None,
 ) -> int:
     cursor = db[repository.LISTINGS_COLLECTION].find({})
     docs = await cursor.to_list(length=None)
@@ -118,7 +118,7 @@ async def _count_matching(
             listing = Listing.model_validate(doc)
         except ValidationError:
             continue
-        if matcher.matches(cfg, listing, region_centers=region_centers):
+        if matcher.matches(cfg, listing, region_filter=region_filter):
             count += 1
     return count
 
@@ -206,17 +206,22 @@ async def emit_welcome(
     """End-to-end: count matches, render, publish."""
     from . import publisher
 
-    region_records = await geo.find_many(db, cfg.region_osm_ids)
-    region_centers: list[tuple[float, float]] = []
+    region_records = await geo.find_many(
+        db, cfg.region_osm_ids, with_geometry=True
+    )
     region_names: list[str] = []
     for osm_id in cfg.region_osm_ids:
         rec = region_records.get(int(osm_id))
-        if rec and rec.get("lat") is not None and rec.get("lon") is not None:
-            region_centers.append((rec["lat"], rec["lon"]))
-            if rec.get("name"):
-                region_names.append(rec["name"])
+        if rec and rec.get("name"):
+            region_names.append(rec["name"])
 
-    matching_count = await _count_matching(db, cfg, region_centers)
+    region_filter: matcher.RegionFilter | None = None
+    if cfg.region_osm_ids and cfg.radius_km is not None and region_records:
+        region_filter = geo.build_region_filter(
+            list(region_records.values()), cfg.radius_km
+        )
+
+    matching_count = await _count_matching(db, cfg, region_filter)
     payload = build_welcome_payload(
         user_id=user_id,
         config_id=config_id,
