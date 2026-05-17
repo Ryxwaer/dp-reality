@@ -18,6 +18,17 @@ metadata:
 data:
   OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.tracing.svc.cluster.local:4317
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  # Tempo accepts traces only — its OTLP receiver does not implement
+  # `opentelemetry.proto.collector.metrics.v1.MetricsService` and
+  # responds with `12 UNIMPLEMENTED`. The Node SDK
+  # (`@opentelemetry/sdk-node`) auto-creates a default OTLP metric
+  # reader unless this is set to `none`, which produces a steady
+  # stream of "metrics export failed" errors that look like a real
+  # failure. We have no metric backend wired up for the app layer
+  # (Prometheus scrapes pod-level cAdvisor / kubelet metrics, not
+  # OTel), so disabling metric export entirely is correct.
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
   OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod,service.namespace=dp-reality
   # Switch the Python HTTP client/server instrumentations
   # (`opentelemetry-instrumentation-httpx`,
