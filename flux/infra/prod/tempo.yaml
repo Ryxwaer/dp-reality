@@ -99,7 +99,18 @@ spec:
       # `prometheus.yaml`.
       metricsGenerator:
         enabled: true
-        remoteWriteUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+        # Replaced the simple `remoteWriteUrl` shorthand with the full
+        # `storage.remote_write[]` form (see below) so we can attach
+        # `write_relabel_configs` and drop service-graph series whose
+        # `client` or `server` label is a raw IP address. Those edges
+        # appear when an uninstrumented caller (kubelet healthz probes,
+        # Prometheus scraping our /metrics, nginx-ingress without a
+        # `peer.service` annotation) hits an instrumented pod — Tempo
+        # has nothing better than the source IP to identify the peer,
+        # so the Node Graph fills with one node per ephemeral pod IP
+        # (and stale ones linger until retention expires). Dropping at
+        # remote_write time clears both the built-in `serviceMap` query
+        # in Grafana *and* the Prometheus-backed table panels in one go.
         processor:
           service_graphs:
             wait: 10s
@@ -147,6 +158,16 @@ spec:
             cluster: dp-reality
         storage:
           path: /var/tempo/generator-blocks
+          remote_write:
+            - url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+              send_exemplars: true
+              write_relabel_configs:
+                - source_labels: [client]
+                  regex: '\d+\.\d+\.\d+\.\d+(:\d+)?'
+                  action: drop
+                - source_labels: [server]
+                  regex: '\d+\.\d+\.\d+\.\d+(:\d+)?'
+                  action: drop
         traces_storage:
           path: /var/tempo/generator-wal
       # Per-tenant override that flips the two processors on; without
