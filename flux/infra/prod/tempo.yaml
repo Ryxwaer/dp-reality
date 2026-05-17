@@ -110,6 +110,23 @@ spec:
               # click via the trace-to-logs config below.
               - k8s.namespace.name
               - k8s.pod.name
+            # Override the default attribute lookup order so every
+            # MongoDB / RabbitMQ peer collapses to a single canonical
+            # node regardless of which language SDK emitted the span.
+            # Without this, pymongo + mongoose populate `db.name` (so
+            # the peer ends up labelled "dp-reality" / "admin") while
+            # the Go driver doesn't, falling through to the raw
+            # `server.address` ("mongodb-0.mongodb:27017") — the same
+            # physical pod renders as three separate nodes. `db.system`
+            # and `messaging.system` are universal across all official
+            # OTel instrumentations and produce the canonical strings
+            # "mongodb" / "rabbitmq", giving one node per backend.
+            peer_attributes:
+              - peer.service
+              - db.system
+              - messaging.system
+              - server.address
+              - net.peer.name
           span_metrics:
             # `target_info` adds a once-per-service info series carrying
             # the resource attributes (service.version, deployment.env,
