@@ -8,28 +8,29 @@
     "dump:regions": "bun run scripts/dump-regions.ts"
   },
   "dependencies": {
-    "@nestjs/common": "^10.4.15",
-    "@nestjs/core": "^10.4.15",
-    "@nestjs/mongoose": "^10.1.0",
-    "@nestjs/platform-express": "^10.4.15",
-    "@opentelemetry/auto-instrumentations-node": "^0.55.0",
-    "@opentelemetry/exporter-trace-otlp-grpc": "^0.57.0",
-    "@opentelemetry/sdk-node": "^0.57.0",
+    "@nestjs/common": "^11.1.21",
+    "@nestjs/core": "^11.1.21",
+    "@nestjs/mongoose": "^11.0.4",
+    "@nestjs/platform-express": "^11.1.21",
+    "@opentelemetry/auto-instrumentations-node": "^0.76.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.218.0",
+    "@opentelemetry/instrumentation": "^0.218.0",
+    "@opentelemetry/sdk-node": "^0.218.0",
     "@turf/boolean-point-in-polygon": "^7.3.5",
     "@turf/buffer": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "@turf/union": "^7.3.5",
-    "amqplib": "^0.10.5",
-    "axios": "^1.7.9",
+    "amqplib": "^2.0.1",
+    "axios": "^1.16.1",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.14.1",
-    "mongoose": "^8.9.5",
+    "class-validator": "^0.15.1",
+    "mongoose": "^9.6.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@nestjs/cli": "^10.4.9",
-    "@types/amqplib": "^0.10.6",
-    "typescript": "^5.7.3"
+    "@nestjs/cli": "^11.0.21",
+    "@types/amqplib": "^0.10.8",
+    "typescript": "^5.9.3"
   }
 }

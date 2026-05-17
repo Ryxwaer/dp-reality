@@ -19,3 +19,16 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.tracing.svc.cluster.local:4317
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
   OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod,service.namespace=dp-reality
+  # Switch the Python HTTP client/server instrumentations
+  # (`opentelemetry-instrumentation-httpx`,
+  # `opentelemetry-instrumentation-fastapi`) from the legacy
+  # `http.method` / `http.url` attribute set to the stable OTel HTTP
+  # semantic convention (`http.request.method`, `url.full`,
+  # `server.address`). Tempo's `service_graphs` processor uses
+  # `server.address` as the canonical peer label for outbound HTTP,
+  # so without this opt-in the
+  # `bot-bazos -> reality.bazos.cz` /
+  # `bot-bezrealitky -> bezrealitky.cz` edges never get drawn. The
+  # Node and Go OTel SDKs already default to the stable conv, so the
+  # variable is a no-op for them and safe to set globally.
+  OTEL_SEMCONV_STABILITY_OPT_IN: http

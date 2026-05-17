@@ -1,19 +1,19 @@
-motor==3.7.0
-aio-pika==9.5.4
+motor==3.7.1
+aio-pika==9.6.2
 httpx==0.28.1
-beautifulsoup4==4.13.3
-lxml==5.3.1
-pydantic-settings==2.8.1
-pydantic==2.11.1
-apscheduler==3.11.0
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
+beautifulsoup4==4.14.3
+lxml==6.1.0
+pydantic-settings==2.14.1
+pydantic==2.13.4
+apscheduler==3.11.2
+fastapi==0.136.1
+uvicorn[standard]==0.47.0
 
 # OpenTelemetry — see services/bot-bezrealitky/requirements.txt for
 # the rationale; same wires, same SDK, same versions.
-opentelemetry-sdk==1.28.2
-opentelemetry-exporter-otlp-proto-grpc==1.28.2
-opentelemetry-instrumentation-aio-pika==0.49b2
-opentelemetry-instrumentation-pymongo==0.49b2
-opentelemetry-instrumentation-httpx==0.49b2
-opentelemetry-instrumentation-fastapi==0.49b2
+opentelemetry-sdk==1.41.1
+opentelemetry-exporter-otlp-proto-grpc==1.41.1
+opentelemetry-instrumentation-aio-pika==0.62b1
+opentelemetry-instrumentation-pymongo==0.62b1
+opentelemetry-instrumentation-httpx==0.62b1
+opentelemetry-instrumentation-fastapi==0.62b1

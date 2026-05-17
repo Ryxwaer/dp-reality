@@ -29,7 +29,7 @@ services:
   # without needing a Grafana running locally.
   tempo:
     container_name: dp-reality-tempo
-    image: grafana/tempo:2.6.1
+    image: grafana/tempo:2.10.5
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./dev/tempo.yaml:/etc/tempo/tempo.yaml:ro
@@ -78,6 +78,14 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+      # Switch the Python HTTP client/server instrumentations from the
+      # legacy `http.method` / `http.url` attribute set to the stable
+      # OTel HTTP semantic convention (`http.request.method`,
+      # `url.full`, `server.address`). Tempo's `service_graphs`
+      # processor uses `server.address` as the canonical peer label
+      # for outbound HTTP, so without this opt-in the
+      # `bot-bazos -> reality.bazos.cz` edge never gets drawn.
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
     ports:
       - "8001:8000"
     depends_on:
@@ -164,6 +172,11 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
+      # See bot-bazos for rationale: opts the Python HTTP
+      # instrumentations into the stable HTTP semantic convention so
+      # outbound spans carry `server.address` (= `bezrealitky.cz`,
+      # `nominatim.openstreetmap.org`) for Tempo's service graph.
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
     ports:
       - "8003:8000"
     depends_on:

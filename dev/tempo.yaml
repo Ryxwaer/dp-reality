@@ -40,6 +40,26 @@ metrics_generator:
     service_graphs:
       wait: 10s
       max_items: 10000
+      # Mirror flux/infra/prod/tempo.yaml: the default
+      # peer_attributes set (peer.service / db.name / db.system) does
+      # not include the new HTTP semantic conv `server.address`, so
+      # outbound HTTP edges to untraced peers (e.g.
+      # `bot-bazos -> reality.bazos.cz`) get dropped. Adding
+      # server.address pulls them back in. db.system /
+      # messaging.system pin DB and broker peers to canonical labels
+      # (`mongodb`, `rabbitmq`) regardless of how each driver names
+      # the connection. database_name_attributes overrides the same
+      # behaviour specifically for database client spans, where Tempo
+      # otherwise prefers `db.namespace` (the database name) over
+      # `db.system` (the engine name).
+      peer_attributes:
+        - peer.service
+        - db.system
+        - messaging.system
+        - server.address
+        - net.peer.name
+      database_name_attributes:
+        - db.system
     span_metrics:
       enable_target_info: true
 
