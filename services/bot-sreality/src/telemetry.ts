@@ -22,11 +22,19 @@
  * not hard-code any of these here so the same image runs unchanged
  * in dev / staging / prod.
  */
+import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 
 if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+  // Tempo rollouts make the OTLP/gRPC exporter spam WARN-level
+  // "transient error, retrying" diagnostics until the next Tempo pod
+  // is Ready. The SDK retries internally and drops the batch on final
+  // failure, so the per-attempt logs are pure noise. ERROR level keeps
+  // genuine SDK failures visible.
+  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.ERROR);
+
   const sdk = new NodeSDK({
     traceExporter: new OTLPTraceExporter(),
     instrumentations: [getNodeAutoInstrumentations()]
@@ -34,11 +42,17 @@ if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
   sdk.start();
 
   // Flush + shutdown on SIGTERM/SIGINT so the last batch of spans
-  // doesn't get dropped when k8s rolls the pod.
+  // doesn't get dropped when k8s rolls the pod. A failed flush during
+  // shutdown is logged as a single line — typically Tempo being
+  // unavailable at the moment we roll, which is recoverable on the
+  // next pod start.
   const shutdown = (): void => {
     sdk
       .shutdown()
-      .catch((err: unknown) => console.error('OTel shutdown failed', err))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('OTel shutdown failed:', message);
+      })
       .finally(() => process.exit(0));
   };
   process.on('SIGTERM', shutdown);

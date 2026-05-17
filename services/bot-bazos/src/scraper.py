@@ -47,6 +47,19 @@ _CATEGORY_SUB_TO_PROPERTY: dict[str, PropertyType] = {
     "ostatni": PropertyType.OTHER,
 }
 
+# bazos.cz returns 404 for these (main, sub) URLs — they are listed
+# in the front-end's <select> dropdowns but no listings are ever
+# published under them. Kept in `_CATEGORY_SUB_TO_PROPERTY` so the
+# /parse-url endpoint and incoming user configs still validate.
+_INVALID_CATEGORY_COMBOS: set[tuple[str, str]] = {
+    ("prodam", "chalupa"),
+    ("prodam", "nebytove-prostory"),
+    ("prodam", "obchod"),
+    ("pronajmu", "chalupa"),
+    ("pronajmu", "nebytove-prostory"),
+    ("pronajmu", "obchod"),
+}
+
 
 @dataclass(frozen=True)
 class _CategoryCursor:
@@ -61,6 +74,7 @@ def _build_category_matrix() -> list[_CategoryCursor]:
         _CategoryCursor(main, sub, price_type, property_type)
         for main, price_type in _CATEGORY_MAIN_TO_PRICE.items()
         for sub, property_type in _CATEGORY_SUB_TO_PROPERTY.items()
+        if (main, sub) not in _INVALID_CATEGORY_COMBOS
     ]
 
 
@@ -156,9 +170,11 @@ async def _scrape_category(
     for page in range(pages):
         url = _category_page_url(cursor, page)
         response = await client.get(url)
-        # 404 is the end-of-pagination signal for a category that has
-        # fewer than `pages * 20` listings; everything else is a real
-        # failure and bubbles up to the cycle's restart counter.
+        # 404 is the end-of-pagination signal: bazos.cz pages return
+        # 404 once `page * 20` exceeds the row count. Known-dead
+        # (main, sub) combos are pre-filtered via
+        # `_INVALID_CATEGORY_COMBOS`, so a 404 on page 0 here means
+        # bazos.cz removed/renamed a category.
         if response.status_code == 404:
             break
         response.raise_for_status()

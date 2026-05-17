@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -17,6 +18,14 @@ import (
 	"dp-reality/email-notifier/internal/consumer"
 	"dp-reality/email-notifier/internal/repository"
 	"dp-reality/email-notifier/internal/telemetry"
+)
+
+// Bounded startup retry parameters: absorb a RabbitMQ rollout without
+// CrashLoopBackOff churn, but still fail fast if the broker is gone
+// for real (per CLAUDE.md "no fallbacks that silence failure").
+const (
+	amqpDialTimeout  = 30 * time.Second
+	amqpDialInterval = 2 * time.Second
 )
 
 func main() {
@@ -53,9 +62,9 @@ func main() {
 	db := mongoClient.Database(dbName(cfg.MongoURI))
 	repo := repository.New(db)
 
-	amqpConn, err := amqp.Dial(cfg.RabbitMQURL)
+	amqpConn, err := dialRabbitMQ(rootCtx, cfg.RabbitMQURL, amqpDialTimeout, amqpDialInterval)
 	if err != nil {
-		slog.Error("connect to RabbitMQ failed", "err", err)
+		slog.Error("connect to RabbitMQ failed", "err", err, "timeout", amqpDialTimeout)
 		os.Exit(1)
 	}
 	defer amqpConn.Close()
@@ -65,6 +74,36 @@ func main() {
 	svc := consumer.New(cfg, repo)
 	if err := svc.Start(rootCtx, amqpConn); err != nil && err != context.Canceled {
 		slog.Error("consumer stopped", "err", err)
+	}
+}
+
+// dialRabbitMQ retries amqp.Dial on a fixed interval until success,
+// context cancellation, or the deadline. Each failed attempt logs at
+// WARN with the attempt count; the final failure is reported by the
+// caller at ERROR so the fail-fast contract is preserved.
+func dialRabbitMQ(ctx context.Context, url string, timeout, interval time.Duration) (*amqp.Connection, error) {
+	deadline := time.Now().Add(timeout)
+	attempt := 0
+	var lastErr error
+	for {
+		attempt++
+		conn, err := amqp.Dial(url)
+		if err == nil {
+			if attempt > 1 {
+				slog.Info("connected to RabbitMQ after retries", "attempt", attempt)
+			}
+			return conn, nil
+		}
+		lastErr = err
+		if time.Now().Add(interval).After(deadline) {
+			return nil, lastErr
+		}
+		slog.Warn("connect to RabbitMQ failed, retrying", "err", err, "attempt", attempt, "retry_in", interval)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
 	}
 }
 
