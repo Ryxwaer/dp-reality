@@ -156,11 +156,9 @@ function summariseFilter(cfg: SrealityBotConfig): string {
 }
 
 function renderWelcomeCard(input: {
-  botName: string;
   matchingCount: number;
   cfg: SrealityBotConfig;
 }): string {
-  const name = escHtml(input.botName) || 'Untitled bot';
   const summary = escHtml(summariseFilter(input.cfg));
   const interval = config.scrapeIntervalMinutes;
   const countLine =
@@ -175,7 +173,6 @@ function renderWelcomeCard(input: {
     + 'background:#ffffff">'
     + '<div style="font-size:12px;color:#64748b;text-transform:uppercase;'
     + 'letter-spacing:0.04em;margin-bottom:6px">Sreality.cz \u00b7 Watchdog active</div>'
-    + `<div style="font-size:18px;color:#0f172a;font-weight:600;margin-bottom:10px">Your bot "${name}" is now watching</div>`
     + `<p style="margin:0 0 12px;font-size:13px;color:#1e293b;line-height:1.5">${countLine}</p>`
     + '<div style="margin:14px 0;padding:10px 12px;background:#f8fafc;'
     + 'border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569">'
@@ -204,7 +201,6 @@ export class WelcomeService {
   async emit(input: {
     userId: string;
     configId: string;
-    botName: string;
     cfg: SrealityBotConfig;
   }): Promise<void> {
     const regionFilter = await this.buildRegionFilter(input.cfg);
@@ -214,18 +210,13 @@ export class WelcomeService {
       if (this.matcher.matches(input.cfg, listing, regionFilter)) matchingCount += 1;
     }
 
-    const html = renderWelcomeCard({
-      botName: input.botName,
-      matchingCount,
-      cfg: input.cfg,
-    });
-    const subject = `Your bot "${input.botName || 'Untitled bot'}" is now watching ${config.displayName}`;
+    const html = renderWelcomeCard({ matchingCount, cfg: input.cfg });
 
     await this.publisher.publishBotWelcome({
       userId: input.userId,
       configId: input.configId,
       botId: config.serviceId,
-      subject,
+      sourceDisplayName: config.displayName,
       html,
     });
     this.logger.log(

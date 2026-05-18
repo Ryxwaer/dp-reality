@@ -23,11 +23,11 @@ const (
 )
 
 type WelcomeEvent struct {
-	UserID   string `json:"user_id"`
-	ConfigID string `json:"config_id"`
-	BotID    string `json:"bot_id"`
-	Subject  string `json:"subject"`
-	HTML     string `json:"html"`
+	UserID            string `json:"user_id"`
+	ConfigID          string `json:"config_id"`
+	BotID             string `json:"bot_id"`
+	SourceDisplayName string `json:"source_display_name"`
+	HTML              string `json:"html"`
 }
 
 func (s *Service) startWelcome(ctx context.Context, conn *amqp.Connection) error {
@@ -136,7 +136,7 @@ func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
 		return
 	}
 
-	if err := emailer.SendWelcome(s.cfg, *user, ev.BotID, ev.Subject, ev.HTML); err != nil {
+	if err := emailer.SendWelcome(s.cfg, *user, *bot, ev.SourceDisplayName, ev.HTML); err != nil {
 		slog.Warn("welcome: send failed, dropping (no retry)",
 			"user_id", ev.UserID, "config_id", ev.ConfigID, "err", err)
 		_ = msg.Ack(false)

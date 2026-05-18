@@ -75,11 +75,9 @@ def _esc(s: str | None) -> str:
 
 def render_welcome_card(
     *,
-    bot_name: str,
     matching_count: int,
     cfg: BotConfig,
 ) -> str:
-    name = _esc(bot_name) or "Untitled bot"
     summary = _esc(_format_filter_summary(cfg))
     interval = settings.scrape_interval_minutes
     count_line = (
@@ -99,8 +97,6 @@ def render_welcome_card(
         'background:#ffffff">'
         '<div style="font-size:12px;color:#64748b;text-transform:uppercase;'
         'letter-spacing:0.04em;margin-bottom:6px">Bazos.cz · Watchdog active</div>'
-        f'<div style="font-size:18px;color:#0f172a;font-weight:600;margin-bottom:10px">'
-        f'Your bot "{name}" is now watching</div>'
         f'<p style="margin:0 0 12px;font-size:13px;color:#1e293b;line-height:1.5">{count_line}</p>'
         '<div style="margin:14px 0;padding:10px 12px;background:#f8fafc;'
         'border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569">'
@@ -119,21 +115,15 @@ def build_welcome_payload(
     *,
     user_id: str,
     config_id: str,
-    bot_name: str,
     matching_count: int,
     cfg: BotConfig,
 ) -> dict[str, Any]:
-    name = bot_name or "Untitled bot"
     return {
         "user_id": user_id,
         "config_id": config_id,
         "bot_id": settings.service_id,
-        "subject": f'Your bot "{name}" is now watching {settings.display_name}',
-        "html": render_welcome_card(
-            bot_name=name,
-            matching_count=matching_count,
-            cfg=cfg,
-        ),
+        "source_display_name": settings.display_name,
+        "html": render_welcome_card(matching_count=matching_count, cfg=cfg),
     }
 
 
@@ -143,14 +133,12 @@ async def emit_welcome(
     *,
     user_id: str,
     config_id: str,
-    bot_name: str,
     cfg: BotConfig,
 ) -> None:
     matching_count = await _count_matching(db, cfg)
     payload = build_welcome_payload(
         user_id=user_id,
         config_id=config_id,
-        bot_name=bot_name,
         matching_count=matching_count,
         cfg=cfg,
     )

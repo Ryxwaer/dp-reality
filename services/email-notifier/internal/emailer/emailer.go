@@ -146,7 +146,7 @@ func SendDigest(cfg config.Config, user repository.User, bot repository.Bot, row
 	return nil
 }
 
-func SendWelcome(cfg config.Config, user repository.User, botID, subject, cardHTML string) error {
+func SendWelcome(cfg config.Config, user repository.User, bot repository.Bot, sourceDisplayName, cardHTML string) error {
 	if user.Email == "" {
 		slog.Warn("welcome: user has no email, skipping", "user_id", user.ID.Hex())
 		return nil
@@ -155,16 +155,22 @@ func SendWelcome(cfg config.Config, user repository.User, botID, subject, cardHT
 		return nil
 	}
 
-	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex(), botID)
+	unsubURL, err := buildUnsubscribeURL(cfg, user.ID.Hex(), bot.BotID)
 	if err != nil {
 		return fmt.Errorf("build unsubscribe url: %w", err)
 	}
 
-	heading := subject
-	if heading == "" {
-		heading = "Your new bot is now active"
+	botLabel := bot.Name
+	if botLabel == "" {
+		botLabel = bot.BotID
 	}
-	body := envelope(heading, "", unsubURL, cardHTML)
+	source := sourceDisplayName
+	if source == "" {
+		source = bot.BotID
+	}
+	subject := fmt.Sprintf(`Your bot "%s" is now watching %s`, botLabel, source)
+
+	body := envelope(subject, "", unsubURL, cardHTML)
 	return sendMail(cfg, user.Email, subject, body)
 }
 

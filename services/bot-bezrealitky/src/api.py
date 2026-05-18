@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 class CreateBody(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
-    bot_name: str = Field(default="", max_length=200)
 
 
 class ParseUrlBody(BaseModel):
@@ -300,7 +299,6 @@ def build_router() -> APIRouter:
                 db, rabbitmq,
                 user_id=user_id,
                 config_id=config_id,
-                bot_name=body.bot_name,
                 cfg=cfg,
             )
             await repository.mark_welcome_sent(db, config_id)

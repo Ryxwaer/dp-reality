@@ -53,7 +53,6 @@ function dedupeIn<T>(input: unknown, allowed: ReadonlySet<T>): T[] {
 }
 
 interface PostBody {
-  bot_name?: string;
   config?: Partial<SrealityBotConfig>;
 }
 
@@ -157,12 +156,7 @@ export class BotsController {
 
     if (result.created) {
       try {
-        await this.welcome.emit({
-          userId,
-          configId,
-          botName: body.bot_name?.trim() || 'Untitled bot',
-          cfg: config,
-        });
+        await this.welcome.emit({ userId, configId, cfg: config });
         await this.repository.markWelcomeSent(configId);
       } catch (err) {
         this.logger.warn(

@@ -56,14 +56,14 @@ export class PublisherService implements OnModuleInit, OnModuleDestroy {
     userId: string;
     configId: string;
     botId: string;
-    subject: string;
+    sourceDisplayName: string;
     html: string;
   }): Promise<void> {
     await this.publish(EXCHANGE_WELCOME, {
       user_id: input.userId,
       config_id: input.configId,
       bot_id: input.botId,
-      subject: input.subject,
+      source_display_name: input.sourceDisplayName,
       html: input.html,
     });
   }
