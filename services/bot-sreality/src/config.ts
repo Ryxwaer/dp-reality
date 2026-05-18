@@ -6,8 +6,6 @@ function intEnv(key: string, fallback: number): number {
 }
 
 export const config = {
-  // `serviceId` doubles as the compose / k8s Service name and the URL
-  // slug under /modules/<bot_id>/* on the BFF — they must match.
   serviceId: process.env.SERVICE_ID ?? 'bot-sreality',
   displayName: process.env.DISPLAY_NAME ?? 'Sreality.cz',
   description:

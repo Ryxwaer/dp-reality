@@ -5,12 +5,6 @@ from typing import Any
 
 from .models import Listing
 
-# Anchor-free contract: the listing URL is intentionally NOT embedded
-# as an <a> inside this HTML. Each consumer (email envelope, inbox
-# detail) wraps the entire card in one tile-wide <a> using the
-# structured `url` field; nesting another <a> would make HTML5 parsers
-# collapse the outer wrapper and break the tile click target.
-
 _PRICE_LABELS = {"sale": "Sale", "rent": "Rent / mo"}
 _PROPERTY_LABELS = {
     "apartment": "Apartment",

@@ -16,17 +16,6 @@ const bodySchema = z.object({
   { message: 'At least one field must be provided' }
 )
 
-// Patch user-owned per-config metadata. Status flips are mirrored
-// directly into the owning bot's <bot>_config collection (the BFF
-// resolves it via module_registry.config_collection) so the bot's
-// matcher loop picks up the change on its next cycle. The two writes
-// are sequential — bot first, BFF second — so the bot stops scraping
-// at least as early as the dashboard claims it has.
-//
-// `pending -> active` is the wizard's commit signal: the iframe sent
-// `module:saved`, the bot has already inserted its config row with
-// `active: true`, and we just have to flip our own cache from
-// "pending" to "active".
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const configId = getRouterParam(event, 'id')
@@ -43,11 +32,6 @@ export default defineEventHandler(async (event) => {
 
   const db = await getDb()
 
-  // 1) Mirror the status into the bot-owned <bot>_config collection
-  //    BEFORE the BFF cache, so the bot stops/resumes its matcher at
-  //    least as early as the dashboard says it has. Skipped on the
-  //    pending->active wizard commit because the bot wrote
-  //    `active: true` itself when it created the row.
   if (body.status !== undefined && existing.status !== 'pending') {
     const registry = await findRegistryEntry(existing.bot_id)
     if (!registry || !registry.config_collection) {
@@ -59,7 +43,6 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  // 2) Update users.bots[] — the dashboard projection.
   const set: Record<string, unknown> = {}
   if (body.name !== undefined) set['bots.$[bot].name'] = body.name
   if (body.email_notifications !== undefined) {
@@ -67,10 +50,6 @@ export default defineEventHandler(async (event) => {
   }
   if (body.status !== undefined) set['bots.$[bot].status'] = body.status
 
-  // Visit-to-refresh (FR-02-B): every transition INTO `active` from
-  // either the provisional `pending` reservation or a `stopped` row
-  // stamps a fresh `expires_at`. The daily sweep (deferred) will flip
-  // rows whose expiry has passed back to `stopped`.
   if (body.status === 'active' && existing.status !== 'active') {
     set['bots.$[bot].expires_at'] = nextBotExpiry()
   }

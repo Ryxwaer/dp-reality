@@ -1,19 +1,3 @@
-"""Private OSM-region index for the Bezrealitky bot.
-
-Owns the `bezrealitky_geo` collection. Entries are keyed by OSM
-relation id (the integer behind `regionOsmIds=R<id>` in any
-bezrealitky.cz `/vyhledat?...` URL) and carry the region's centre
-point so the matcher can run a great-circle distance check against
-each listing's own GPS coordinates.
-
-Two population paths:
-  - Boot seed: the 14 Czech administrative kraje + Slovensko, fetched
-    from the bezrealitky GraphQL API (`czechRegions`).
-  - Lazy resolve: any OSM id the user pastes via `parse-url` that
-    isn't in the seed is looked up against Nominatim and upserted on
-    the fly. Failure is propagated — we refuse to store a config
-    pointing at a region we can't anchor.
-"""
 from __future__ import annotations
 
 import logging
@@ -118,7 +102,6 @@ async def find_many(
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance in kilometres between two WGS84 points."""
     r_km = 6371.0088
     p1 = math.radians(lat1)
     p2 = math.radians(lat2)
@@ -129,12 +112,6 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _polygon_from_boundary(boundary: str) -> dict[str, Any] | None:
-    """Parse Bezrealitky's `((lon lat,lon lat,...))` boundary into GeoJSON Polygon.
-
-    Confirmed by inspection that the response is a single closed ring per
-    region (no multi-ring or multi-polygon entries). We preserve vertex
-    order so the result can be projected and buffered for matching.
-    """
     ring: list[list[float]] = []
     for match in _BOUNDARY_POINT_RE.finditer(boundary):
         lon, lat = float(match.group(1)), float(match.group(2))
@@ -161,7 +138,6 @@ def _centroid_of_polygon(poly: dict[str, Any]) -> tuple[float, float] | None:
 
 
 async def _seed_from_bezrealitky(db: AsyncIOMotorDatabase) -> int:
-    """Upsert the 14 czech kraje + Slovensko into `bezrealitky_geo`."""
     headers = {
         "Origin": "https://www.bezrealitky.cz",
         "Referer": "https://www.bezrealitky.cz/",
@@ -253,12 +229,6 @@ def _row_to_record(row: dict[str, Any], osm_id: int) -> dict[str, Any]:
 
 
 async def resolve_via_nominatim(osm_id: int) -> dict[str, Any]:
-    """Resolve an OSM relation id to a record (with polygon when available).
-
-    Raises if the lookup fails or returns nothing — callers must surface
-    that to the user rather than silently storing a config that can't
-    match listings by radius.
-    """
     headers = {"User-Agent": settings.geo_user_agent, "Accept": "application/json"}
     params = {
         "osm_ids": f"R{osm_id}",
@@ -334,12 +304,6 @@ async def search_local(
 async def search_nominatim(
     query: str, limit: int = 8
 ) -> list[dict[str, Any]]:
-    """Free-text search via Nominatim, restricted to CZ + SK administrative units.
-
-    Returns the same record shape as `find_by_osm_id` so the UI can
-    treat both sources uniformly. Caller is responsible for caching
-    selected hits via `upsert_resolved` once the user picks one.
-    """
     headers = {"User-Agent": settings.geo_user_agent, "Accept": "application/json"}
     params = {
         "q": query,
@@ -382,10 +346,6 @@ async def search_nominatim(
 async def resolve_or_fetch(
     db: AsyncIOMotorDatabase, osm_id: int
 ) -> dict[str, Any]:
-    """Return the geo record for `osm_id`, fetching+caching if absent.
-
-    Always returns a record or raises — never returns None.
-    """
     cached = await find_by_osm_id(db, osm_id)
     if cached:
         return cached
@@ -399,7 +359,6 @@ async def _is_empty(db: AsyncIOMotorDatabase) -> bool:
 
 
 async def seed_if_needed(db: AsyncIOMotorDatabase) -> None:
-    """Populate `bezrealitky_geo` with Czech kraje on first boot."""
     mode = settings.geo_seed_mode
     if mode == "never":
         logger.info("bezrealitky_geo seed: skipped (GEO_SEED_MODE=never)")
@@ -417,14 +376,6 @@ async def seed_if_needed(db: AsyncIOMotorDatabase) -> None:
     logger.info("bezrealitky_geo seed: %d kraje upserted from bezrealitky API", written)
 
 
-# ---------------------------------------------------------------------------
-# Region filter — replicates bezrealitky.cz's `polygonBuffer=N` semantics.
-# A listing matches if its GPS point falls inside the union of all selected
-# region polygons expanded outward by `radius_km`. Regions resolved without a
-# polygon (rare — node-level OSM relations) degrade to a centre-point buffer,
-# which collapses to the legacy haversine behaviour.
-
-# UTM zone 33N covers Czechia + Slovakia with sub-metre projection error.
 _METRIC_CRS = "EPSG:32633"
 _TO_METRIC = Transformer.from_crs("EPSG:4326", _METRIC_CRS, always_xy=True).transform
 _TO_WGS84 = Transformer.from_crs(_METRIC_CRS, "EPSG:4326", always_xy=True).transform
@@ -433,14 +384,6 @@ _TO_WGS84 = Transformer.from_crs(_METRIC_CRS, "EPSG:4326", always_xy=True).trans
 def build_region_filter(
     records: list[dict[str, Any]], radius_km: int
 ) -> Callable[[float, float], bool]:
-    """Return a `(lon, lat) -> bool` predicate for radius matching.
-
-    For each region record we project its geometry (or fall back to its
-    centre point) into UTM 33N, buffer by `radius_km * 1000` metres,
-    union the result, and check listings against that single shape.
-    Doing the projection once per cycle keeps the per-listing path to a
-    cheap point-in-polygon test.
-    """
     if radius_km < 0:
         raise ValueError("radius_km must be non-negative")
     geoms = []

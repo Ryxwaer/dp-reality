@@ -1,16 +1,3 @@
-// MongoDB access for the email-notifier.
-//
-// The notifier reads from exactly two collections:
-//   - users: to look up the email address, bot metadata, and the
-//     per-bot email_notifications flag;
-//   - notifications: to fetch the pre-rendered HTML cards that the
-//     originating bot service inserted.
-//
-// It writes to one collection (notifications) only to stamp sent_at
-// after a successful delivery.
-//
-// Anything specific to a source (matcher syntax, listing schema,
-// notification templating) is the bot service's concern, not ours.
 package repository
 
 import (
@@ -29,13 +16,6 @@ const (
 	notificationsCol = "notifications"
 )
 
-// Bot is the BFF-owned per-user configuration metadata. `ConfigID` is
-// the per-user, BFF-minted identifier carried on every event from the
-// bot service; `BotID` is the platform-wide service identifier (the
-// compose / k8s service name) advertised in module_registry.
-// `ExpiresAt` carries the visit-to-refresh expiry (FR-02-B); the
-// notifier never writes it but round-trips it so any future read path
-// can rely on it being present.
 type Bot struct {
 	ConfigID           string     `bson:"config_id"`
 	BotID              string     `bson:"bot_id"`
@@ -45,8 +25,6 @@ type Bot struct {
 	ExpiresAt          *time.Time `bson:"expires_at,omitempty"`
 }
 
-// User mirrors the BFF's users collection. Only the fields the
-// notifier needs are decoded.
 type User struct {
 	ID    bson.ObjectID `bson:"_id"`
 	Email string        `bson:"email"`
@@ -54,12 +32,6 @@ type User struct {
 	Bots  []Bot         `bson:"bots"`
 }
 
-// Notification is the row written by a bot service. We treat the
-// `html` blob as opaque; matcher fields and source schemas are out of
-// scope for this service. The `(user_id, bot_id, source_ref)` unique
-// index collapses two matching configs of the same user/bot/listing
-// into a single row; `ConfigIDs` is the audit trail of which configs
-// of the user flagged the listing.
 type Notification struct {
 	ID        bson.ObjectID `bson:"_id"`
 	UserID    string        `bson:"user_id"`
@@ -82,9 +54,6 @@ func New(db *mongo.Database) *Repository {
 	return &Repository{db: db}
 }
 
-// FetchUser returns the user document by string-form _id. The BFF
-// publishes ObjectIDs as 24-hex; legacy clients passing other formats
-// get a controlled error.
 func (r *Repository) FetchUser(ctx context.Context, userID string) (*User, error) {
 	oid, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
@@ -97,13 +66,7 @@ func (r *Repository) FetchUser(ctx context.Context, userID string) (*User, error
 	return &u, nil
 }
 
-// FetchUnsentForBot returns notifications for `userID` belonging to
-// `botID` that have not yet been emailed. Sorted oldest-first so the
-// envelope reads chronologically. The dedup key on the row is
-// `(user_id, bot_id, source_ref)`, so a single row already covers all
-// of the user's configs of that bot that matched the listing; the
-// caller's per-config gating only needs to decide whether ANY of the
-// user's configs of this bot is currently opted-in.
+// FetchUnsentForBot returns unsent notifications for the user/bot, sorted oldest-first.
 func (r *Repository) FetchUnsentForBot(ctx context.Context, userID, botID string) ([]Notification, error) {
 	cursor, err := r.db.Collection(notificationsCol).Find(ctx,
 		bson.D{
@@ -124,10 +87,6 @@ func (r *Repository) FetchUnsentForBot(ctx context.Context, userID, botID string
 	return rows, nil
 }
 
-// MarkSent stamps sent_at on the listed notification rows. Best-effort:
-// individual write errors are folded together but not propagated as
-// failures (re-emailing the same row only happens if sent_at remained
-// nil, which is the safe direction).
 func (r *Repository) MarkSent(ctx context.Context, ids []bson.ObjectID, when time.Time) error {
 	if len(ids) == 0 {
 		return nil
@@ -142,8 +101,6 @@ func (r *Repository) MarkSent(ctx context.Context, ids []bson.ObjectID, when tim
 	return nil
 }
 
-// IsNotFound is used to silently drop events for users that no longer
-// exist (deleted accounts, etc.).
 func IsNotFound(err error) bool {
 	return errors.Is(err, mongo.ErrNoDocuments)
 }

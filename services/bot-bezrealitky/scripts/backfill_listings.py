@@ -1,30 +1,4 @@
-"""One-off backfill of `listings_bezrealitky` using the bot's own scraper.
-
-The live scheduler in `src/cycle.py` calls `scraper.fetch_listings()`,
-which walks `settings.scrape_pages` (default 3) pages per
-(offer_type, estate_type) tuple — enough to catch new listings each
-cycle, but not nearly enough to surface the long tail of currently
-active bezrealitky listings.
-
-This script reuses the bot's exact GraphQL primitives —
-`scraper._CATEGORY_MATRIX`, `scraper._fetch_category_page`,
-`scraper._summary_to_listing`, the same throttle, and
-`repository.upsert_listings` — but walks each category to the end
-(empty `list` from the GraphQL response is treated as end-of-pagination
-just like the live scraper does). It deliberately skips detail
-enrichment and matcher/notifier, because:
-
-  * The matcher reads only base fields (estate_type/offer_type/price/
-    surface/gps/...). Description, energy class and extra photos
-    surfaced by `enrich_with_detail` are not used by matching.
-  * Detail-fetching N≈thousands of adverts at the 2s/page throttle
-    would take many hours and risks a 429/403 from the WAF.
-
-Run inside the bot-bezrealitky container so motor/httpx/etc are
-available:
-
-    docker exec dp-reality-bot-bezrealitky python -m scripts.backfill_listings
-"""
+"""One-off backfill of `listings_bezrealitky` using the bot's own scraper."""
 from __future__ import annotations
 
 import asyncio
@@ -39,9 +13,6 @@ import motor.motor_asyncio
 from src import repository, scraper
 from src.config import settings
 
-# Safety ceiling. Bezrealitky is a small portal (low thousands per
-# category at most), so 10_000 pages × 30/page is effectively unbounded
-# while still bounding the loop.
 PAGES_LIMIT = 10_000
 
 logging.basicConfig(
@@ -83,12 +54,12 @@ async def _backfill_category(
             listings.append(listing)
         scraped = len(listings)
         if page % 10 == 0:
-            logger.info("[%s] page %d — accumulated %d", tag, page, scraped)
+            logger.info("[%s] page %d, accumulated %d", tag, page, scraped)
         await asyncio.sleep(settings.scrape_throttle_seconds_between_pages)
 
     new_listings = await repository.upsert_listings(db, listings, run_id)
     upserted = len(new_listings)
-    logger.info("[%s] done — scraped=%d new=%d", tag, scraped, upserted)
+    logger.info("[%s] done, scraped=%d new=%d", tag, scraped, upserted)
     return scraped, upserted
 
 
@@ -116,7 +87,7 @@ async def _backfill() -> None:
                 )
             except scraper._BlockedError as exc:
                 logger.error(
-                    "[%s/%s] BLOCKED by WAF (%s) — aborting backfill",
+                    "[%s/%s] blocked by WAF (%s), aborting backfill",
                     offer_type.value, estate_type.value, exc,
                 )
                 break

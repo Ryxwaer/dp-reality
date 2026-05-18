@@ -130,7 +130,6 @@ class GeoPoint(BaseModel):
 
 
 class Listing(BaseModel):
-    # Platform analytics base (cross-source $unionWith).
     title: str
     property_type: PropertyType
     disposition: Optional[str] = None
@@ -140,7 +139,6 @@ class Listing(BaseModel):
     district: Optional[str] = None
     source_url: str
 
-    # Source-specific tail.
     source_id: str
     estate_type: EstateType
     offer_type: OfferType
@@ -158,10 +156,6 @@ class Listing(BaseModel):
 
 
 class BotConfig(BaseModel):
-    """Matcher payload — every field maps 1:1 to a bezrealitky.cz
-    `/vyhledat?...` query parameter.
-    """
-
     offer_type: Optional[OfferType] = None
     estate_type: Optional[EstateType] = None
     disposition_in: list[Disposition] = Field(default_factory=list)
@@ -176,8 +170,6 @@ class BotConfig(BaseModel):
 
 
 class StoredBotConfig(BaseModel):
-    """Document shape persisted in `bezrealitky_config`."""
-
     config_id: str = Field(alias="_id")
     user_id: str
     active: bool

@@ -1,17 +1,3 @@
-/**
- * Captures every Czech-territory region (kraj, okres, obec, městská
- * část, čtvrť, ulice) that sreality.cz/api/cs/v2/suggest is willing to
- * surface, and writes them to a static JSON file consumed at boot by
- * the seeder. Foreign OSM entries (category endings other than `_cz`)
- * are dropped — they pollute the autocomplete with countries we cannot
- * search anyway.
- *
- * Sreality's suggest API caps each response at ~10 hits and ranks by
- * relevance, so a plain alphabet sweep misses long-tail wards and the
- * lower-ranked kraje. We therefore complement the sweep with a fixed
- * list of well-known phrases (the 14 kraje, the okres-name skeleton,
- * and the major-city `<city>-` ward expansion).
- */
 import axios, { AxiosError } from 'axios';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -59,10 +45,6 @@ const KRAJE = [
   'Kraj Vysočina',
 ];
 
-// Sreality returns districts when their full "Okres <city>" form is
-// queried. The 76 CZ okresy follow the kraj-name pattern below; we
-// don't enumerate every name, we just probe the high-population okresy
-// + every kraj capital, which covers the URLs people actually paste.
 const OKRES_SEEDS = [
   'Okres Praha-východ', 'Okres Praha-západ', 'Okres Beroun', 'Okres Kladno',
   'Okres Mělník', 'Okres Mladá Boleslav', 'Okres Nymburk', 'Okres Příbram',
@@ -85,9 +67,6 @@ const OKRES_SEEDS = [
   'Okres Opava', 'Okres Ostrava-město',
 ];
 
-// Major cities whose wards/quarters tend to appear as separate entities
-// in Sreality URLs. Probing `<city>-` plus a `<city>-<letter>` skeleton
-// pulls the autocomplete past the top municipality match.
 const MAJOR_CITIES = ['praha', 'brno', 'ostrava', 'plzeň', 'liberec', 'olomouc'];
 
 interface SrealityHit {
@@ -107,9 +86,6 @@ interface SrealityHit {
 }
 
 export interface RegionRecord {
-  // Composite `_id` of the form `<region_typ>:<sreality_id>` because
-  // Sreality scopes its numeric IDs by entity type — id=11 is both a
-  // region (Středočeský kraj) and a quarter (Brno-střed).
   _id: string;
   sreality_id: number;
   region_typ: string;
@@ -191,9 +167,6 @@ async function fetchPhrase(phrase: string, attempt = 0): Promise<SrealityHit[]> 
   } catch (err) {
     const ax = err as AxiosError;
     const status = ax.response?.status;
-    // Sreality answers "no dictionary match" with HTTP 400 + the body
-    // `{ message: "Server error. Please step away from the device..." }`.
-    // Treat that pair as an empty result rather than retrying.
     if (status === 400) return [];
     if (attempt >= RETRY_LIMIT) {
       process.stderr.write(
@@ -228,24 +201,17 @@ async function runPool<T>(
 function buildPrefixes(): string[] {
   const out: string[] = [];
 
-  // 1- and 2-letter alphabet sweep (incl. diacritics).
   for (const a of FIRST_LETTERS) {
     out.push(a);
     for (const b of SECOND_LETTERS) out.push(a + b);
   }
 
-  // Kraje by exact name (the autocomplete returns only the matching
-  // kraj for a fully-spelled phrase).
   for (const name of KRAJE) out.push(name);
-
-  // Okresy by skeleton.
   for (const name of OKRES_SEEDS) out.push(name);
 
-  // Major-city ward expansion: `praha-a`, `praha-b`, …
   for (const city of MAJOR_CITIES) {
     out.push(city + '-');
     for (const a of FIRST_LETTERS) out.push(city + '-' + a);
-    // Praha's wards include numeric IDs (Praha 1 … Praha 22).
     if (city === 'praha') {
       for (let i = 1; i <= 22; i++) out.push(`praha ${i}`);
     }

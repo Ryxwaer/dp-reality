@@ -21,8 +21,6 @@ class PropertyType(str, Enum):
 
 
 class Listing(BaseModel):
-    """Analytics base schema + Bazos-specific tail."""
-
     title: str
     property_type: PropertyType
     disposition: Optional[str] = None
@@ -40,21 +38,12 @@ class Listing(BaseModel):
 
 
 class BotConfig(BaseModel):
-    """Matcher payload persisted as the `config` subdocument of `bazos_config`.
-
-    Every field here is derivable from a reality.bazos.cz search URL
-    (`/prodam|/pronajmu` path, `hledat`, `hlokalita`, `humkreis`,
-    `cenaod`, `cenado`). The configure form mirrors that contract 1:1.
-    """
-
-    category_main: Optional[str] = None  # "prodam" | "pronajmu"
-    category_sub: Optional[str] = None  # "byt" | "dum" | "pozemek" | ...
+    category_main: Optional[str] = None
+    category_sub: Optional[str] = None
     price_min: Optional[int] = None
     price_max: Optional[int] = None
     psc: Optional[str] = None
     radius_km: Optional[int] = Field(default=None, ge=1, le=200)
-    # All keywords must appear (case-insensitive) somewhere in
-    # `title + description` of a scraped listing.
     keywords: list[str] = Field(default_factory=list)
 
     @field_validator("psc")

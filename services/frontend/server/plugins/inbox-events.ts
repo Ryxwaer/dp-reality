@@ -17,8 +17,6 @@ async function start(url: string, attempt = 0): Promise<void> {
 
     const channel = await connection.createChannel()
     await channel.assertExchange(EXCHANGES.notifyBotProcessed, 'fanout', { durable: true })
-    // exclusive + autoDelete: per-process queue, dies with us so we
-    // don't accumulate stale bindings from prior boots.
     const q = await channel.assertQueue(QUEUE, {
       durable: false,
       exclusive: false,

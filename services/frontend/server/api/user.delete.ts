@@ -11,10 +11,6 @@ export default defineEventHandler(async (event) => {
     db.collection(COLLECTIONS.notifications).deleteMany({ user_id: user._id })
   ])
 
-  // Wipe every session the user owns, not just the current one — a
-  // half-deleted account that still served requests from another tab
-  // would be a security regression. clearUserSession then drops the
-  // current cookies on the responding tab.
   await deleteAllSessionsForUser(user._id)
   await clearUserSession(event)
 

@@ -23,21 +23,13 @@ export interface MapListing {
 
 export interface ListingsMapResponse {
   listings: MapListing[]
-  // Quintile thresholds (p20, p40, p60, p80) used by the client to colour
-  // markers/clusters into 5 price bins. Always present when count > 0.
   breakpoints: [number, number, number, number]
   median: number
   count: number
 }
 
-// Per-source listings collection owned by services/bot-sreality
-// (`listings_sreality`). The BFF reads it for read-only visualisations;
-// writes remain encapsulated in the bot service.
 const COLLECTION = 'listings_sreality'
 
-// Drop placeholder "ask for price" rows. Real Czech listings start in tens of
-// thousands of CZK for rent and millions for sale; anything below this is a
-// dummy / "request price" placeholder.
 const MIN_REAL_PRICE = 1000
 
 function quantile(sortedAsc: number[], q: number): number {

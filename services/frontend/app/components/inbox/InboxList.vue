@@ -5,9 +5,7 @@ import type { NotificationDoc } from '~~/shared/types'
 const props = defineProps<{
   notifications: NotificationDoc[]
   selected: NotificationDoc | null
-  // Registry display names keyed by bot_id (the service id).
   serviceLabels: Map<string, string>
-  // User-supplied per-configuration names keyed by config_id.
   configNames: Map<string, string>
 }>()
 

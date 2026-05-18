@@ -30,11 +30,6 @@ const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
   { default: () => ({ items: [] }), lazy: true }
 )
 
-// Service display names per bot_id (from the registry), config display
-// names per config_id (from the user's bots[]). The inbox row carries
-// `bot_id` + `config_ids[]` directly, so the per-row badge resolves
-// against `serviceLabels` and the per-row bot name lists the matching
-// configurations from `configNames`.
 const serviceLabels = computed(() => {
   const out = new Map<string, string>()
   for (const r of registry.value?.items ?? []) {
@@ -116,16 +111,12 @@ const selectedLabels = computed(() => {
   }
 })
 
-// SSE: subscribe to inbox.refresh hints. We re-fetch on each hint
-// (the stream payload is intentionally tiny — it doesn't carry rows).
 let source: EventSource | null = null
 onMounted(() => {
   if (typeof EventSource === 'undefined') return
   source = new EventSource('/api/sse/inbox')
   source.addEventListener('inbox.refresh', () => { void refresh() })
-  source.onerror = () => {
-    // Browser will auto-reconnect; we don't surface transient errors.
-  }
+  source.onerror = () => {}
 })
 onBeforeUnmount(() => {
   source?.close()

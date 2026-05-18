@@ -13,14 +13,6 @@ def matches(
     *,
     region_filter: RegionFilter | None = None,
 ) -> bool:
-    """Decide whether a listing should produce a notification for this config.
-
-    `region_filter`, when provided, is a precomputed `(lon, lat) -> bool`
-    predicate that encodes "any selected region polygon, expanded outward
-    by `radius_km`" — matching bezrealitky.cz's own `polygonBuffer`
-    semantics. Fail-closed if the listing has no GPS: we cannot prove
-    inclusion and refuse to notify.
-    """
     if config.offer_type and listing.offer_type != config.offer_type:
         return False
     if config.estate_type and listing.estate_type != config.estate_type:

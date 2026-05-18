@@ -9,8 +9,6 @@ apscheduler==3.11.2
 fastapi==0.136.1
 uvicorn[standard]==0.47.0
 
-# OpenTelemetry — see services/bot-bezrealitky/requirements.txt for
-# the rationale; same wires, same SDK, same versions.
 opentelemetry-sdk==1.41.1
 opentelemetry-exporter-otlp-proto-grpc==1.41.1
 opentelemetry-instrumentation-aio-pika==0.62b1

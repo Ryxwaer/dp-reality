@@ -49,9 +49,6 @@ function priceBin(price: number): number {
 }
 
 function binFromMarkers(markers: L.Marker[]): number {
-  // Cluster colour = bin of the cluster's median price. Picking the median
-  // child rather than the mean keeps a single luxury villa from re-tinting
-  // an entire neighbourhood.
   const prices = markers
     .map(m => (m.options as L.MarkerOptions & { price?: number }).price)
     .filter((p): p is number => typeof p === 'number')
@@ -131,8 +128,6 @@ function renderMarkers() {
   map.addLayer(cluster)
 }
 
-// `data` is replaced as a fresh object whenever useFetch in the parent settles,
-// so a shallow watch on the reference is enough — no `deep: true` needed.
 watch(() => props.data, () => {
   renderMarkers()
 })
@@ -155,8 +150,6 @@ onMounted(() => {
     interactive: false
   }).addTo(map)
 
-  // Transparent label-only raster tiles (CARTO dark variant). Lives in its own
-  // pane above markers so place names stay readable. No API key needed.
   map.createPane('labels')
   const labelsPane = map.getPane('labels')!
   labelsPane.style.zIndex = '650'
@@ -175,8 +168,6 @@ onMounted(() => {
   map.setMaxBounds(overlay.getBounds().pad(0.25))
   map.fitBounds(overlay.getBounds(), { padding: [12, 12] })
 
-  // Belt-and-braces invalidate on the next frame in case the parent's flex
-  // layout reflows once more after our mount (Leaflet caches container size).
   requestAnimationFrame(() => map?.invalidateSize({ animate: false }))
 
   if (props.data.listings.length) renderMarkers()

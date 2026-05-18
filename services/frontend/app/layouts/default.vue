@@ -4,13 +4,11 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 const route = useRoute()
 const open = ref(false)
 
-// Keep the unread-count in sync with the notifications slideover and inbox.
 const { data: unreadCount, refresh: refreshUnread } = await useFetch<{ count: number }>(
   '/api/notifications/count',
   { default: () => ({ count: 0 }) }
 )
 
-// Refresh the badge when route changes (covers marking-as-read on inbox nav).
 watch(() => route.fullPath, () => {
   refreshUnread()
 })

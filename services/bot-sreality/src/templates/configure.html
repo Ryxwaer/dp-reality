@@ -403,10 +403,6 @@
 
     let isEditMode = false;
 
-    // Same-origin double-submit CSRF: the BFF sets a non-HttpOnly
-    // `csrf-token` cookie; we echo it back on every state-changing call
-    // through the /modules/* reverse proxy. Standalone hits the bot
-    // directly so the cookie is absent and the header is omitted.
     function csrfHeaders() {
       var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
       return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
@@ -689,8 +685,6 @@
         ? '/modules/bot-sreality/configs/' + configId
         : '/configs/' + configId + '?user_id=' + encodeURIComponent(userId || '');
       const res = await fetch(url, { credentials: 'same-origin' });
-      // 404 means create-mode (config_id was minted by the BFF but the
-      // bot has never seen it before). 200 is edit-mode and we prefill.
       if (res.status === 404) {
         isEditMode = false;
         els.submit.textContent = 'Create bot';

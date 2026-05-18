@@ -1,16 +1,3 @@
-"""Bezrealitky scraper — GraphQL only.
-
-Two operations against the public bezrealitky GraphQL endpoint:
-  - `AdvertList`   paginated summaries with everything the matcher
-                   needs (gps, condition, ownership, ...). Detail is
-                   fetched only for newly-inserted listings to keep
-                   the per-cycle traffic predictable.
-  - `AdvertDetail` description, energy class, extra photos.
-
-Anti-bot countermeasures (NFR-01-B): per-page throttle and a small
-header-profile pool rotated round-robin. On a 429/403 the cycle aborts
-and the scheduler backs off `settings.backoff_minutes_on_block`.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -46,7 +33,6 @@ logger = logging.getLogger(__name__)
 GRAPHQL_ENDPOINT = "https://api.bezrealitky.cz/graphql/"
 DETAIL_URL_PREFIX = "https://www.bezrealitky.cz/nemovitosti-byty-domy/"
 
-# Required by nginx WAF — without Origin + Referer the endpoint 403s.
 _STATIC_HEADERS = {
     "Origin": "https://www.bezrealitky.cz",
     "Referer": "https://www.bezrealitky.cz/",
@@ -56,14 +42,13 @@ _STATIC_HEADERS = {
 
 
 class _BlockedError(RuntimeError):
-    """Bezrealitky returned 429 or 403 — abort the cycle and back off."""
+    pass
 
 
 class _TransientHttp(RuntimeError):
-    """5xx — retry within the same cycle, do not back off."""
+    pass
 
 
-# (offer_type, estate_type) tuples scraped per cycle.
 _CATEGORY_MATRIX: list[tuple[OfferType, EstateType]] = [
     (OfferType.PRODEJ, EstateType.BYT),
     (OfferType.PRODEJ, EstateType.DUM),
@@ -351,12 +336,6 @@ async def fetch_listings() -> list[Listing]:
 
 
 async def enrich_with_detail(listings: list[Listing]) -> None:
-    """Detail-fetch up to `max_detail_fetches_per_cycle` listings.
-
-    Best-effort: a `_BlockedError` here only stops the enrichment phase
-    (summaries are already persisted by the cycle); other failures
-    propagate.
-    """
     if not listings:
         return
     budget = min(len(listings), settings.max_detail_fetches_per_cycle)

@@ -1,15 +1,3 @@
-// notify.bot.welcome consumer.
-//
-// Welcome events are emitted exactly once per configuration creation
-// by the owning bot service. The payload is event-carried state: it
-// includes the user_id, config_id, bot_id, subject, and a fully-
-// rendered HTML card authored by the bot. We never look at listings
-// or templates here — the welcome path does NOT touch the
-// notifications collection at all.
-//
-// Sent immediately on receipt (no coalescing): welcomes are rare,
-// one-per-config-per-lifetime events, and the user expects an instant
-// confirmation.
 package consumer
 
 import (
@@ -34,11 +22,6 @@ const (
 	welcomeQueueName    = "email-notifier.bot.welcome"
 )
 
-// WelcomeEvent is the contract published by every bot service. The
-// notifier treats `subject` and `html` as opaque, ready-to-send
-// strings. `ConfigID` identifies the per-user configuration; `BotID`
-// identifies the platform-wide service that emitted the event (the
-// compose / k8s service name) and is used only for logging.
 type WelcomeEvent struct {
 	UserID   string `json:"user_id"`
 	ConfigID string `json:"config_id"`
@@ -52,8 +35,6 @@ func (s *Service) startWelcome(ctx context.Context, conn *amqp.Connection) error
 	if err != nil {
 		return fmt.Errorf("open channel: %w", err)
 	}
-	// Channel lifetime tied to the goroutine; closed implicitly when
-	// the connection drops, otherwise on context cancellation below.
 	defer ch.Close()
 
 	if err := ch.ExchangeDeclare(welcomeExchangeName, "fanout", true, false, false, false, nil); err != nil {
@@ -142,19 +123,11 @@ func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
 
 	bot := findConfig(user.Bots, ev.ConfigID)
 	if bot == nil {
-		// Configuration was deleted between welcome publish and our
-		// consumption. Nothing to confirm; drop the event.
 		slog.Info("welcome: config no longer present on user, skipping",
 			"user_id", ev.UserID, "config_id", ev.ConfigID)
 		_ = msg.Ack(false)
 		return
 	}
-	// Welcome is a confirmation of a save action — the same per-config
-	// email_notifications switch that gates digests gates this too.
-	// "pending" is accepted because the bot publishes the welcome
-	// from inside its insert handler, before the BFF has had a chance
-	// to flip users.bots[].status from "pending" to "active"; without
-	// this the welcome would race-skip every time on fast hardware.
 	if !bot.EmailNotifications || (bot.Status != "active" && bot.Status != "pending") {
 		slog.Debug("welcome: bot opted out or inactive, skipping",
 			"user_id", ev.UserID, "config_id", ev.ConfigID,
@@ -164,11 +137,6 @@ func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
 	}
 
 	if err := emailer.SendWelcome(s.cfg, *user, ev.BotID, ev.Subject, ev.HTML); err != nil {
-		// Welcome is a one-shot confirmation: nice to have, not worth
-		// retrying. Ack on failure to avoid hammering the upstream SMTP
-		// (and the log) when it rate-limits or rejects us. The user
-		// will still see matching listings in the inbox via the regular
-		// notify.bot.processed path on the next scrape cycle.
 		slog.Warn("welcome: send failed, dropping (no retry)",
 			"user_id", ev.UserID, "config_id", ev.ConfigID, "err", err)
 		_ = msg.Ack(false)
@@ -180,9 +148,6 @@ func (s *Service) handleWelcome(ctx context.Context, msg amqp.Delivery) {
 	_ = msg.Ack(false)
 }
 
-// findConfig returns the user.bots[] entry whose ConfigID matches —
-// the welcome event is per-configuration (one welcome per save), so
-// the lookup is by the per-user id, not the bot service id.
 func findConfig(bots []repository.Bot, configID string) *repository.Bot {
 	for i := range bots {
 		if bots[i].ConfigID == configID {

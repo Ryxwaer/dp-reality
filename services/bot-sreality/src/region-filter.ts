@@ -18,13 +18,6 @@ export interface RegionInput {
   center: { coordinates: [number, number] };
 }
 
-// Build a `(lon, lat) -> bool` predicate for a config's selected
-// regions. Each region's polygon (or, for polygon-less entries, its
-// centre point) is buffered outward by `radiusKm`, the resulting
-// shapes are unioned, and listings are then tested with a single
-// point-in-polygon check. This mirrors bezrealitky.cz's polygonBuffer
-// semantics so "Brno + 10 km" means "Brno's actual boundary expanded
-// by 10 km" rather than "10 km circle around the centroid".
 export function buildRegionFilter(
   regions: RegionInput[],
   radiusKm: number,
@@ -66,6 +59,4 @@ function featureFromRegion(
   return point([c[0], c[1]]);
 }
 
-// Re-export `feature` so callers that build raw GeoJSON elsewhere can
-// still wrap results uniformly without pulling @turf/helpers directly.
 export { feature };

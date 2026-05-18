@@ -38,10 +38,6 @@ function toChoice(b: UnsubscribeBot, preselectDisable: boolean): BotChoice {
     config_id: b.config_id,
     name: b.name,
     bot_id: b.bot_id,
-    // Pre-checking "Disable emails" only makes sense for configs that
-    // are currently sending — otherwise the box would be ticked next
-    // to a "emails off" subtitle, suggesting a change that the submit
-    // logic would silently skip.
     disable_email: preselectDisable && b.email_notifications,
     stop_bot: false,
     initial_email: b.email_notifications,
@@ -62,11 +58,6 @@ watch(summary, (s) => {
   groups.value = s.groups.map(g => ({
     bot_id: g.bot_id,
     display_name: g.display_name,
-    // Only the originating group is expanded by default; the others
-    // collapse so the page's focus matches the user's intent ("turn off
-    // *this* bot's emails") without forcing them to scan unrelated
-    // sections. Falls back to the previous "all expanded" behaviour
-    // when the token has no bid (older email-notifier build).
     expanded: triggered ? g.bot_id === triggered : true,
     bots: g.bots.map(b => toChoice(b, triggered === g.bot_id))
   }))

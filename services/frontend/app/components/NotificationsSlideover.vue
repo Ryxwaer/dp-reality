@@ -25,10 +25,6 @@ const { data: registry } = await useFetch<{ items: ModuleRegistryEntry[] }>(
   { default: () => ({ items: [] }), lazy: true }
 )
 
-// Per-row subtitle: "<service> · <config name>[ · <config name>]".
-// The notification row is deduplicated by (user, bot, listing), so
-// `config_ids[]` is the set of the user's configurations that flagged
-// the listing — render every name that resolves.
 const serviceLabels = computed(() => {
   const out = new Map<string, string>()
   for (const r of registry.value?.items ?? []) {

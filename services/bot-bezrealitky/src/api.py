@@ -1,15 +1,3 @@
-"""HTTP surface of the Bezrealitky bot service.
-
-  GET  /healthz               liveness probe
-  GET  /configure             self-hosted configuration UI
-  GET  /configs/{config_id}   read-back for edit-mode pre-fill
-  POST /configs/{config_id}   persist + fire welcome on creation
-  POST /parse-url             /vyhledat?... URL → partial config
-  GET  /regions/lookup        resolve OSM ids to {name, lat, lon} via geo
-
-The reverse proxy at the BFF (/modules/bot-bezrealitky/*) injects the
-authenticated `user_id` as a query parameter on every forwarded call.
-"""
 from __future__ import annotations
 
 import logging
@@ -88,13 +76,6 @@ def _parse_osm_id(raw: str) -> int | None:
 
 
 def parse_bezrealitky_url(raw: str) -> dict[str, Any]:
-    """Translate a bezrealitky.cz `/vyhledat?...` URL into a partial config.
-
-    Anything the URL does not carry is omitted; anything malformed
-    (non-numeric `priceTo`, unknown enum values, etc.) is reported back
-    so the user sees the same filter they pasted, never silently
-    altered.
-    """
     trimmed = (raw or "").strip()
     if not trimmed:
         return {"ok": False, "reason": "Paste a bezrealitky.cz search URL."}
@@ -191,11 +172,6 @@ def _state(request: Request) -> tuple[Any, Any]:
 async def _resolve_region_osm_ids(
     db: motor.motor_asyncio.AsyncIOMotorDatabase, osm_ids: list[int]
 ) -> None:
-    """Make sure every region the config references is in `bezrealitky_geo`.
-
-    Raises `LookupError` if any id cannot be resolved upstream — surfaced
-    to the user as an HTTP 400.
-    """
     for osm_id in osm_ids:
         await geo.resolve_or_fetch(db, osm_id)
 
@@ -251,13 +227,6 @@ def build_router() -> APIRouter:
         q: str = Query(..., min_length=1, max_length=80),
         limit: int = Query(8, ge=1, le=20),
     ) -> JSONResponse:
-        """Cache-first region search.
-
-        Returns matches from `bezrealitky_geo` immediately; if fewer
-        than `limit` hits are local, falls back to Nominatim (CZ + SK,
-        relations only). Selected hits are cached on follow-up
-        `/regions/lookup`, so repeated searches stay local.
-        """
         db, _ = _state(request)
         local = await geo.search_local(db, q, limit)
         local_ids = {r["osm_id"] for r in local}

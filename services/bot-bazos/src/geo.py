@@ -1,14 +1,3 @@
-"""Private PSČ ↔ coordinate index for the Bazos bot.
-
-Owns the `bazos_geo` collection. The bundled GeoNames CZ.txt is parsed
-and upserted into Mongo on boot; from then on every radius lookup and
-every city-suggest is an in-process query against this collection.
-
-There is no runtime dependency on any peer service: the bot service
-boundary owns its own matching logic end-to-end, per the platform's
-bounded-context rule (one service ⇒ one private slice of Mongo ⇒ no
-cross-service reads at request time).
-"""
 from __future__ import annotations
 
 import logging
@@ -26,22 +15,11 @@ logger = logging.getLogger(__name__)
 
 GEO_COLLECTION = "bazos_geo"
 
-# WGS84 equatorial radius — used to convert km to radians for the
-# $centerSphere operator below.
 _EARTH_RADIUS_KM = 6378.1
-
-# GeoNames postal-code dump columns (tab-separated, no header):
-#   0:country  1:postal  2:place  3:region_name  4:region_code
-#   5:district_name  6:district_code  7:ward_name  8:ward_code
-#   9:lat  10:lon  11:accuracy
 _MIN_COLUMNS = 12
 
 
 def _normalise_city(text: str) -> str:
-    """Diacritic- and case-insensitive folded form used for indexed
-    lookups: "Brno-Veveří" → "brno-veveri". A user typing "brno" then
-    matches "Brno", "BRNO" and "Brnó" with a regular B-tree index.
-    """
     decomposed = unicodedata.normalize("NFKD", text)
     stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
     return stripped.casefold().strip()
@@ -76,9 +54,6 @@ def _doc_to_record(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 async def find_by_psc(db: AsyncIOMotorDatabase, psc: str) -> dict[str, Any] | None:
-    # Multiple wards can share a PSČ; the representative record is the
-    # alphabetically-first city — stable across boots so logs stay
-    # reproducible.
     doc = await db[GEO_COLLECTION].find_one(
         {"psc": psc},
         projection=_projection(),
@@ -100,8 +75,6 @@ async def resolve_city(
     exact = [_doc_to_record(d) async for d in exact_cursor]
     if exact:
         return exact
-    # Fall back to a left-anchored prefix scan; escape the needle to
-    # keep regex metacharacters in user input from changing semantics.
     prefix_cursor = coll.find(
         {"city_normalised": {"$regex": "^" + re.escape(needle)}},
         projection=_projection(),
@@ -123,10 +96,6 @@ async def _suggest_by_psc_prefix(
 async def suggest(
     db: AsyncIOMotorDatabase, query: str, limit: int = 10
 ) -> list[dict[str, Any]]:
-    """Autocomplete dispatcher for the configure form's single-field
-    location picker. Numeric input (1–5 digits) is treated as a PSČ
-    prefix; anything else as a (diacritic-folded) city name.
-    """
     q = (query or "").strip()
     if not q:
         return []
@@ -138,11 +107,6 @@ async def suggest(
 async def in_radius_by_psc(
     db: AsyncIOMotorDatabase, psc: str, radius_km: float
 ) -> set[str]:
-    """Return the set of PSČs within `radius_km` of `psc`.
-
-    Raises `LookupError` if the anchor PSČ is not in the dataset — the
-    cycle treats that as a per-config skip with an ERROR log.
-    """
     anchor = await find_by_psc(db, psc)
     if not anchor:
         raise LookupError(f"PSČ not found in bazos_geo: {psc!r}")
@@ -198,16 +162,6 @@ def _parse_dataset(path: Path) -> list[dict[str, Any]]:
 
 
 async def seed_if_needed(db: AsyncIOMotorDatabase, path: Path) -> None:
-    """Upsert the bundled GeoNames dump into `bazos_geo`.
-
-    Idempotent on (psc, city). `GEO_SEED_MODE` controls behaviour:
-      - "missing" (default): seed only on the first boot against an
-        empty collection. Subsequent boots are a no-op.
-      - "always": re-upsert every boot, picking up coordinate changes
-        in the upstream dump when the image is rebuilt.
-      - "never": skip the seeder entirely (useful when bumping the
-        image but already migrated separately).
-    """
     mode = settings.geo_seed_mode
     if mode == "never":
         logger.info("bazos_geo seed: skipped (GEO_SEED_MODE=never)")

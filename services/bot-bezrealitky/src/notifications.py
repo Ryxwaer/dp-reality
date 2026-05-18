@@ -1,4 +1,3 @@
-"""Bezrealitky notification card composition."""
 from __future__ import annotations
 
 import html as html_lib

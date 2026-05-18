@@ -1,13 +1,3 @@
-// Process-local pub/sub for SSE inbox refreshes.
-//
-// The Nitro plugin (server/plugins/inbox-events.ts) consumes
-// notify.bot.processed from RabbitMQ and calls publish() with the
-// affected user_id. Each connected SSE client subscribes via
-// subscribe() to its own user feed.
-//
-// Single-process broker by design: scaling out would replace this with
-// a Redis pub/sub (or fan out events through RabbitMQ per-instance).
-
 export interface InboxEvent {
   user_id: string
   bot_id: string

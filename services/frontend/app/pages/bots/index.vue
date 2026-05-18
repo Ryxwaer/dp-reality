@@ -37,10 +37,6 @@ const serviceLabel = computed(() => {
   return m
 })
 
-// The picker now lives on /store (a full marketplace page) so this
-// dashboard only manages already-minted bots. configBot holds the bot
-// whose iframe-hosted configurator is currently mounted, alongside the
-// matching registry entry the dialog needs for the iframe src.
 const configBot = ref<BotMeta | null>(null)
 const configRegistry = ref<ModuleRegistryEntry | null>(null)
 
@@ -222,8 +218,6 @@ function onConfigSaved() {
 }
 
 function onConfigCancelled() {
-  // The dialog cleans up provisional bots on cancel; refresh the list
-  // so the deleted row disappears from the table immediately.
   refresh()
   closeConfig()
 }

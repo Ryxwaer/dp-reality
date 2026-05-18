@@ -1,23 +1,3 @@
-"""Unit-level proof that the matcher honours the radius/PSČ/keyword
-contract that the cycle relies on.
-
-Pure Python — no Mongo, no IO. The `allowed_pscs` set is synthesised
-from a fixed slice of what `geo.in_radius_by_psc(db, "60200", 10)` is
-known to return against the bundled GeoNames dump. If you change the
-matcher contract, this file must change with it.
-
-Run directly:
-
-    cd services/bot-bazos
-    python -m tests.test_radius_matching
-
-Or inside the image:
-
-    docker run --rm --entrypoint python dp-reality-bot-bazos:latest \\
-        -m tests.test_radius_matching
-
-Exit code is non-zero on any assertion failure.
-"""
 from __future__ import annotations
 
 import sys
@@ -26,17 +6,13 @@ from dataclasses import dataclass
 from src import matcher
 from src.models import BotConfig, Listing, PriceType, PropertyType
 
-# Representative slice of the PSČs `geo.in_radius_by_psc` returns for
-# (60200, 10km) — Brno metro. Hard-coded so this file remains a pure
-# unit test of matcher.matches(); the geo lookup itself is exercised
-# by the bot's boot-time seed + smoke tests in the repository.
 BRNO_10KM_PSCS: set[str] = {
     "60200", "60300", "61200", "61300", "61400",
     "61500", "61600", "61700", "62300", "62500",
     "63500", "63800", "63900", "64400", "65000",
 }
 
-PRAHA_PSC = "11000"   # ~200 km from Brno, must NOT be in BRNO_10KM_PSCS
+PRAHA_PSC = "11000"
 assert PRAHA_PSC not in BRNO_10KM_PSCS
 
 
@@ -235,7 +211,7 @@ def run() -> int:
             ),
             allowed_pscs=allowed,
         ),
-        detail="balkon vs balkónu (no substring) — keyword 'balkon' should miss",
+        detail="balkon vs balkónu, no substring match",
     )
     case(
         "keyword matching is case-insensitive",

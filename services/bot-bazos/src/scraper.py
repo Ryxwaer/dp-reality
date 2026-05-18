@@ -13,8 +13,6 @@ from .models import Listing, PriceType, PropertyType
 
 BASE_URL = "https://reality.bazos.cz/"
 _INZERAT_ID_RE = re.compile(r"^/inzerat/(\d+)/")
-# City and PSČ often run together in the locality string ("Jičín508 01"),
-# so the PSČ is anchored at the end of the trimmed value.
 _PSC_PATTERN = re.compile(r"(\d{3})\s*(\d{2})\s*$")
 
 HEADERS = {
@@ -29,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 _CATEGORY_MAIN_TO_PRICE: dict[str, PriceType] = {
     "prodam": PriceType.SALE,
-    # Rent pages live under /pronajmu/ (verb form), NOT /pronajem/.
     "pronajmu": PriceType.RENT,
 }
 
@@ -47,10 +44,6 @@ _CATEGORY_SUB_TO_PROPERTY: dict[str, PropertyType] = {
     "ostatni": PropertyType.OTHER,
 }
 
-# bazos.cz returns 404 for these (main, sub) URLs — they are listed
-# in the front-end's <select> dropdowns but no listings are ever
-# published under them. Kept in `_CATEGORY_SUB_TO_PROPERTY` so the
-# /parse-url endpoint and incoming user configs still validate.
 _INVALID_CATEGORY_COMBOS: set[tuple[str, str]] = {
     ("prodam", "chalupa"),
     ("prodam", "nebytove-prostory"),
@@ -170,11 +163,6 @@ async def _scrape_category(
     for page in range(pages):
         url = _category_page_url(cursor, page)
         response = await client.get(url)
-        # 404 is the end-of-pagination signal: bazos.cz pages return
-        # 404 once `page * 20` exceeds the row count. Known-dead
-        # (main, sub) combos are pre-filtered via
-        # `_INVALID_CATEGORY_COMBOS`, so a 404 on page 0 here means
-        # bazos.cz removed/renamed a category.
         if response.status_code == 404:
             break
         response.raise_for_status()

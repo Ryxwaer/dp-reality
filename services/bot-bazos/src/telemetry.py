@@ -1,10 +1,3 @@
-"""OpenTelemetry SDK wiring for bot-bazos.
-
-Mirrors `services/bot-bezrealitky/src/telemetry.py`; see that file for
-the rationale. Identical instrumentation set because the two bots
-speak the same wires (FastAPI in, httpx out, Motor/PyMongo,
-aio_pika).
-"""
 from __future__ import annotations
 
 import logging
@@ -38,12 +31,6 @@ def setup_telemetry() -> None:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    # Tempo rollouts cause the OTLP exporter to spam "Transient error
-    # ... retrying" at WARNING and "Failed to export" at ERROR every
-    # few seconds until the next pod is Ready. The BatchSpanProcessor
-    # already handles the retry and drops the batch on final failure,
-    # so the per-attempt logs are pure noise. Keep CRITICAL so a
-    # totally broken exporter still surfaces.
     logging.getLogger(
         "opentelemetry.exporter.otlp.proto.grpc.exporter"
     ).setLevel(logging.CRITICAL)

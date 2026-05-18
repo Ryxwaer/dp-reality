@@ -1,6 +1,1 @@
-# Pre-load the OpenTelemetry SDK before Bun executes any user / Nuxt
-# code so the auto-instrumentations get to patch Node's module loader
-# before `h3`, `node:http`, `mongodb`, `amqplib` etc. are imported.
-# Production runs on Node and uses NODE_OPTIONS=--import for the same
-# purpose (see services/frontend/Dockerfile).
 preload = ["./otel-init.mjs"]

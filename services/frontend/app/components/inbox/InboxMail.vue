@@ -86,13 +86,6 @@ const meta = computed(() => [
         </dl>
       </UCard>
 
-      <!--
-        notification.html is sanitized server-side at read time
-        (server/utils/sanitize-html.ts) and is anchor-free by contract:
-        the listing URL lives on notification.url and is applied here
-        as a tile-wide <a> wrapping the rendered content. Keeps the
-        inbox click affordance identical to the email digest.
-      -->
       <a
         :href="notification.url"
         target="_blank"

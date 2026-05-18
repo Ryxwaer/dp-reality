@@ -2,28 +2,6 @@ import type { H3Event } from 'h3'
 import { ObjectId } from 'mongodb'
 import { getDb, COLLECTIONS } from './db'
 
-/**
- * Mongo-backed session store. Replaces the previous `nuxt-auth-utils`
- * cookie-encrypted session so that the BFF can be replicated horizontally
- * (thesis §3.7.3 — "session state persisted in MongoDB").
- *
- * Wire shape
- * ----------
- * - `dp-session` cookie: HttpOnly, opaque 32-byte hex session id. The
- *   cookie carries the id only; everything else lives in Mongo and the
- *   server is the source of truth.
- * - `csrf-token` cookie: NOT HttpOnly (must be readable by app JS for
- *   the double-submit pattern), same lifetime as the session. Holds the
- *   server-minted CSRF token; the browser echoes it back as the
- *   `X-CSRF-Token` request header on every state-changing call. The
- *   match check lives in `server/middleware/csrf.ts`.
- *
- * Both cookies are `SameSite=Lax`. `Secure` is on in production (the
- * nginx-proxy-manager → ingress-nginx → BFF chain terminates TLS at the
- * outermost hop, so the browser only ever sees the cookies over HTTPS
- * in prod) and off in development so plain-HTTP `nuxt dev` works.
- */
-
 export interface SessionUser {
   id: string
   email: string
@@ -49,9 +27,6 @@ export interface SessionRecord {
 const SESSION_COOKIE = 'dp-session'
 const CSRF_COOKIE = 'csrf-token'
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
-// Only persist `last_seen` if it has drifted by at least this much.
-// Keeps every authenticated request from issuing a Mongo write while
-// still letting an idle session expire within ~1 % of `SESSION_TTL_MS`.
 const TOUCH_THRESHOLD_MS = 5 * 60 * 1000
 
 function isProd(): boolean {
@@ -81,9 +56,6 @@ function cookieAttrs(maxAgeMs: number, httpOnly: boolean) {
 function getClientIp(event: H3Event): string {
   const fwd = getHeader(event, 'x-forwarded-for')
   if (fwd) {
-    // First hop only — this BFF sits behind one trusted reverse proxy
-    // (ingress-nginx); chained X-Forwarded-For values come from
-    // upstream proxies and are not authoritative.
     return fwd.split(',')[0]?.trim() ?? ''
   }
   return event.node.req.socket?.remoteAddress ?? ''
@@ -99,7 +71,6 @@ function setSessionCookies(event: H3Event, sessionId: string, csrfToken: string,
 }
 
 function clearSessionCookies(event: H3Event): void {
-  // maxAge: 0 + path match → browser deletes both immediately.
   setCookie(event, SESSION_COOKIE, '', { ...cookieAttrs(0, true), maxAge: 0 })
   setCookie(event, CSRF_COOKIE, '', { ...cookieAttrs(0, false), maxAge: 0 })
 }
@@ -119,8 +90,6 @@ async function loadSession(sessionId: string): Promise<SessionRecord | null> {
 
   if (!row) return null
   if (row.expires_at.getTime() <= Date.now()) {
-    // Mongo's TTL sweep runs ~once per minute; an expired row we read
-    // before the sweep has fired must still be treated as gone.
     await db.collection(COLLECTIONS.sessions).deleteOne({ _id: sessionId })
     return null
   }
@@ -164,11 +133,6 @@ async function loadUserSession(row: SessionRecord): Promise<UserSession | null> 
   }
 }
 
-/**
- * Create a fresh session row, mint a CSRF token, and emit both cookies.
- * Called by `/api/auth/register` and `/api/auth/login`. Replaces the
- * previous `nuxt-auth-utils` `setUserSession()` export.
- */
 export async function setUserSession(event: H3Event, payload: { user: SessionUser, loggedInAt?: string }): Promise<void> {
   const now = new Date()
   const sessionId = randomHex(32)
@@ -188,20 +152,12 @@ export async function setUserSession(event: H3Event, payload: { user: SessionUse
   setSessionCookies(event, sessionId, csrfToken, SESSION_TTL_MS)
 }
 
-/**
- * Resolve the current session into a `{ user, loggedInAt }` payload,
- * touching `last_seen` if the row has gone stale. Returns null when
- * there is no usable session — caller decides whether to 401.
- */
 export async function getUserSession(event: H3Event): Promise<UserSession | null> {
   const sessionId = getSessionIdFromCookie(event)
   if (!sessionId) return null
 
   const row = await loadSession(sessionId)
   if (!row) {
-    // Cookie pointed at a row that's gone (logout from another tab,
-    // TTL sweep, manual delete). Drop the dangling cookies so the next
-    // request doesn't keep paying for a no-op Mongo lookup.
     clearSessionCookies(event)
     return null
   }
@@ -210,8 +166,6 @@ export async function getUserSession(event: H3Event): Promise<UserSession | null
 
   const payload = await loadUserSession(row)
   if (!payload) {
-    // The user row was deleted but a session row outlived it. Treat as
-    // logged out; clean up so we don't leak orphaned sessions forever.
     const db = await getDb()
     await db.collection(COLLECTIONS.sessions).deleteOne({ _id: row._id })
     clearSessionCookies(event)
@@ -221,10 +175,6 @@ export async function getUserSession(event: H3Event): Promise<UserSession | null
   return payload
 }
 
-/**
- * Same as `getUserSession` but throws 401 when the session is missing.
- * Drop-in for the previous `nuxt-auth-utils` export.
- */
 export async function requireUserSession(event: H3Event): Promise<UserSession> {
   const payload = await getUserSession(event)
   if (!payload) {
@@ -233,22 +183,12 @@ export async function requireUserSession(event: H3Event): Promise<UserSession> {
   return payload
 }
 
-/**
- * Return the raw `sessions` row for the current cookie, or null. Used
- * by the CSRF middleware to compare the header token against the
- * server-side value, and by the `/api/auth/sessions` DELETE route.
- */
 export async function getCurrentSessionRecord(event: H3Event): Promise<SessionRecord | null> {
   const sessionId = getSessionIdFromCookie(event)
   if (!sessionId) return null
   return loadSession(sessionId)
 }
 
-/**
- * Mint a fresh CSRF token on the current session and update the
- * cookie. Standard practice on login (already covered — `setUserSession`
- * mints from scratch) and on privilege change (password rotation).
- */
 export async function rotateCsrfToken(event: H3Event): Promise<string | null> {
   const sessionId = getSessionIdFromCookie(event)
   if (!sessionId) return null
@@ -262,12 +202,6 @@ export async function rotateCsrfToken(event: H3Event): Promise<string | null> {
   return csrfToken
 }
 
-/**
- * Delete the current session row and clear both cookies. The Mongo
- * delete must happen first — clearing the cookie alone leaves a row
- * behind that can be reused by anyone who replays the cookie before
- * the TTL sweep fires.
- */
 export async function clearUserSession(event: H3Event): Promise<void> {
   const sessionId = getSessionIdFromCookie(event)
   if (sessionId) {
@@ -277,12 +211,6 @@ export async function clearUserSession(event: H3Event): Promise<void> {
   clearSessionCookies(event)
 }
 
-/**
- * Delete every session for a user. Used by `DELETE /api/auth/sessions`
- * (operator-grade "log out everywhere") and as a safety net when an
- * account is deleted, so a logged-in tab on a dead account can't keep
- * issuing authenticated requests until the TTL sweep catches up.
- */
 export async function deleteAllSessionsForUser(userId: ObjectId): Promise<number> {
   const db = await getDb()
   const result = await db

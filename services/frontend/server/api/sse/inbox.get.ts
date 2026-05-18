@@ -1,10 +1,6 @@
 import { requireUserIdHex } from '~~/server/utils/auth'
 import { subscribe } from '~~/server/utils/inbox-bus'
 
-// Server-Sent Events stream of "your inbox changed" hints. The client
-// reacts by re-fetching /api/notifications; we don't push the rows
-// themselves to keep the stream tiny and avoid sanitization concerns
-// in the SSE path.
 export default defineEventHandler(async (event) => {
   const userId = await requireUserIdHex(event)
 
@@ -23,7 +19,6 @@ export default defineEventHandler(async (event) => {
 
   send({ ok: true, ts: Date.now() }, 'open')
 
-  // Heartbeat keeps idle connections alive through proxies.
   const heartbeat = setInterval(() => res.write(`: ping\n\n`), 25_000)
 
   const unsub = subscribe(userId, (evt) => {
@@ -39,6 +34,5 @@ export default defineEventHandler(async (event) => {
   event.node.req.on('close', close)
   event.node.req.on('aborted', close)
 
-  // Hold the request open. The body stream is closed by `close()`.
   await new Promise<void>(() => {})
 })

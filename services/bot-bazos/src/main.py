@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    # Init the SDK BEFORE constructing motor / aio_pika clients so the
-    # instrumentation patches the underlying drivers first.
     telemetry.setup_telemetry()
 
     client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongodb_uri)

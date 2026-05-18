@@ -35,9 +35,5 @@ export default defineEventHandler(async (event) => {
     { $set: update }
   )
 
-  // No session refresh is needed — the cookie carries only the opaque
-  // session id; the next /api/_auth/session call reads the updated
-  // user document directly from Mongo. The client triggers that
-  // refresh via `useUserSession().fetch()` after this returns.
   return { ok: true, updated: true }
 })

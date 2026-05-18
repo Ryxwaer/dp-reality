@@ -1,17 +1,3 @@
-"""RabbitMQ publishers for bot-emitted events.
-
-Two fanout exchanges, two contracts:
-  - notify.bot.processed: a scrape cycle finished and produced at
-    least one notification row for `user_id` across one-or-more of
-    that user's configs in this bot service. Emitted exactly once per
-    (user, bot, run); the payload is a pointer tuple
-    ({user_id, bot_id, run_id}) and consumers read the actual rows
-    from the shared notifications collection.
-  - notify.bot.welcome: a brand-new configuration has been saved.
-    Payload is event-carried state — it includes the bot-rendered
-    HTML welcome card and a subject line, so the email-notifier never
-    needs to look up listings or templates.
-"""
 from __future__ import annotations
 
 import json

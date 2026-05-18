@@ -20,9 +20,6 @@ import (
 	"dp-reality/email-notifier/internal/telemetry"
 )
 
-// Bounded startup retry parameters: absorb a RabbitMQ rollout without
-// CrashLoopBackOff churn, but still fail fast if the broker is gone
-// for real (per CLAUDE.md "no fallbacks that silence failure").
 const (
 	amqpDialTimeout  = 30 * time.Second
 	amqpDialInterval = 2 * time.Second
@@ -44,8 +41,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		// Best-effort flush on a fresh context: rootCtx may already be
-		// cancelled by the time we reach this defer.
 		_ = shutdownTelemetry(context.Background())
 	}()
 
@@ -77,10 +72,6 @@ func main() {
 	}
 }
 
-// dialRabbitMQ retries amqp.Dial on a fixed interval until success,
-// context cancellation, or the deadline. Each failed attempt logs at
-// WARN with the attempt count; the final failure is reported by the
-// caller at ERROR so the fail-fast contract is preserved.
 func dialRabbitMQ(ctx context.Context, url string, timeout, interval time.Duration) (*amqp.Connection, error) {
 	deadline := time.Now().Add(timeout)
 	attempt := 0

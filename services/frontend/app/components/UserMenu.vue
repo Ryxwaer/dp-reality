@@ -26,9 +26,7 @@ async function onLogout() {
       method: 'POST',
       headers: csrfHeaders()
     })
-  } catch {
-    // fall through to local clear regardless
-  }
+  } catch {}
   await clearSession()
   await navigateTo('/login')
 }

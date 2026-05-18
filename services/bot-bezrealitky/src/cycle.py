@@ -65,7 +65,7 @@ async def run_cycle(
             _consecutive_failures, _MAX_CONSECUTIVE_FAILURES,
         )
         if _consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-            logger.critical("Consecutive failure threshold reached — exiting for restart")
+            logger.critical("Consecutive failure threshold reached, exiting for restart")
             os._exit(1)
 
 
@@ -80,13 +80,6 @@ async def _persist_detail(
 async def _build_region_filter(
     db: AsyncIOMotorDatabase, cfg: BotConfig
 ) -> matcher.RegionFilter | None:
-    """Compose the polygon+buffer predicate for this config, once per cycle.
-
-    Configs are required to have all referenced OSM ids in
-    `bezrealitky_geo` at save time (api.py enforces it). Missing entries
-    are skipped silently here; the matcher's fail-closed posture rejects
-    listings rather than match-all.
-    """
     if not cfg.region_osm_ids or cfg.radius_km is None:
         return None
     records = await geo.find_many(db, cfg.region_osm_ids, with_geometry=True)

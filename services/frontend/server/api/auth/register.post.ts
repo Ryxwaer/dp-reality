@@ -11,7 +11,6 @@ const schema = z.object({
 })
 
 function generateUnsubscribeToken(): string {
-  // Web Crypto is globally available in Node 18+ and the Nitro runtime.
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')

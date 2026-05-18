@@ -14,7 +14,6 @@ function toIso(value: Date | string | null | undefined): string | null {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
-// Normalise an entry from users.bots[] into the BFF/wire shape.
 export function shapeBot(raw: StoredBot): BotMeta {
   return {
     config_id: raw.config_id,

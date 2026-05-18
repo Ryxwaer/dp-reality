@@ -1,19 +1,3 @@
-// notify.bot.processed consumer.
-//
-// A bot service publishes one event per (user, bot, run) once a scrape
-// cycle has appended at least one notification row for that user
-// across any of their configs in that bot. We send a digest immediately
-// on receipt — no coalescing, no batch window. The window of "did the
-// next event for this user/bot supersede us?" was always small in
-// practice, and the cost of a stretched-out scrape cadence is way
-// lower than the cost of dropping a digest because two events arrived
-// nearby.
-//
-// The AMQP `ack` is deferred until the digest has been sent AND the
-// affected notification rows have been marked sent_at. If anything in
-// that chain fails, the message is `Nack`'d for redelivery; the
-// (user_id, bot_id, source_ref) unique index keeps inserts
-// idempotent and we never lose a row.
 package consumer
 
 import (
@@ -47,8 +31,6 @@ type Event struct {
 	RunID  string `json:"run_id"`
 }
 
-// Service ties together the AMQP delivery loop and the synchronous
-// digest send.
 type Service struct {
 	cfg  config.Config
 	repo *repository.Repository
@@ -58,20 +40,10 @@ func New(cfg config.Config, repo *repository.Repository) *Service {
 	return &Service{cfg: cfg, repo: repo}
 }
 
-// Start runs both consumers in parallel:
-//   - notify.bot.processed — digest sent immediately on receipt;
-//   - notify.bot.welcome   — one-shot welcome confirmation.
-//
-// They share the AMQP connection but each opens its own channel so a
-// channel-level close on one stream cannot stall the other.
 func (s *Service) Start(ctx context.Context, conn *amqp.Connection) error {
 	errCh := make(chan error, 2)
 	go func() { errCh <- s.startProcessed(ctx, conn) }()
 	go func() { errCh <- s.startWelcome(ctx, conn) }()
-
-	// Return on the first failure so main can decide whether to exit
-	// or reconnect. Whichever consumer survives still has its context
-	// cancelled when we return.
 	return <-errCh
 }
 
@@ -92,8 +64,6 @@ func (s *Service) startProcessed(ctx context.Context, conn *amqp.Connection) err
 	if err := ch.QueueBind(q.Name, "", exchangeName, false, nil); err != nil {
 		return fmt.Errorf("bind queue: %w", err)
 	}
-	// prefetch=1 keeps the immediate-send model honest: we do not
-	// pull a second message until the first has been digested + acked.
 	if err := ch.Qos(1, 0, false); err != nil {
 		return fmt.Errorf("set qos: %w", err)
 	}
@@ -120,15 +90,6 @@ func (s *Service) startProcessed(ctx context.Context, conn *amqp.Connection) err
 	}
 }
 
-// handle parses one event, sends the digest, and only then acks. Any
-// error along the way nacks for redelivery (the broker's redelivery
-// will re-try; persistent failures end up dead-lettered per the broker
-// policy). We do NOT ack on failure — that would silently drop work.
-//
-// The incoming AMQP headers carry a W3C `traceparent` injected by the
-// publishing bot's auto-instrumentation; extracting it links our
-// digest span into the same trace as the scrape cycle that produced
-// the event.
 func (s *Service) handle(ctx context.Context, msg amqp.Delivery) {
 	ctx = telemetry.ExtractAMQP(ctx, msg.Headers)
 	ctx, span := telemetry.Tracer().Start(ctx, "notify.bot.processed receive",
@@ -173,9 +134,6 @@ func (s *Service) handle(ctx context.Context, msg amqp.Delivery) {
 	_ = msg.Ack(false)
 }
 
-// flush sends the digest envelope for one (user, bot) and stamps
-// sent_at on every row that went out. Returns nil if there was simply
-// nothing to send (gone user, no opted-in configs, no unsent rows).
 func (s *Service) flush(ctx context.Context, userID, botID string) error {
 	user, err := s.repo.FetchUser(ctx, userID)
 	if err != nil {
@@ -187,11 +145,6 @@ func (s *Service) flush(ctx context.Context, userID, botID string) error {
 		return fmt.Errorf("fetch user: %w", err)
 	}
 
-	// Confirm the user has at least one active + opted-in config for
-	// the firing bot. With the (user_id, bot_id, source_ref) unique
-	// index, the notification row is already deduplicated across the
-	// user's configs of this bot, so the digest is a single envelope
-	// covering every matching listing for this (user, bot) cycle.
 	configs := configsForBot(user.Bots, botID)
 	if len(configs) == 0 {
 		slog.Info("no opted-in configs for bot on this user, skipping",
@@ -207,8 +160,6 @@ func (s *Service) flush(ctx context.Context, userID, botID string) error {
 		return nil
 	}
 
-	// Pass any matching bot row as the envelope label — they all share
-	// the same bot_id, only the per-config name differs.
 	label := configs[0]
 	if err := emailer.SendDigest(s.cfg, *user, label, rows); err != nil {
 		return fmt.Errorf("send digest: %w", err)
@@ -219,19 +170,11 @@ func (s *Service) flush(ctx context.Context, userID, botID string) error {
 		ids = append(ids, r.ID)
 	}
 	if err := s.repo.MarkSent(ctx, ids, time.Now().UTC()); err != nil {
-		// Digest is already out the door. Failing here would re-send
-		// the same rows on the next event for this bucket, so we MUST
-		// surface this as a hard error so the broker can keep the
-		// redelivery for sent_at to settle.
 		return fmt.Errorf("mark sent: %w", err)
 	}
 	return nil
 }
 
-// configsForBot returns every active, opted-in config of `botID` that
-// belongs to the user. Used to translate the per-(user, bot) event into
-// the set of config_ids whose unsent rows should be drained into a
-// single digest.
 func configsForBot(bots []repository.Bot, botID string) []repository.Bot {
 	out := make([]repository.Bot, 0, len(bots))
 	for i := range bots {

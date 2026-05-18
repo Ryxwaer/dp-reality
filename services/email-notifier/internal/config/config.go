@@ -1,12 +1,3 @@
-// Configuration for the email-notifier service.
-//
-// This service has shrunk dramatically from its predecessor: it no
-// longer knows about scrapers, sources, matchers, or notification
-// templates. Its sole job is to consume notify.bot.processed events,
-// look up the corresponding user + bot metadata in MongoDB, fetch the
-// pre-rendered notification rows that the bot service appended, and
-// stitch them into a single envelope email — sent immediately on
-// receipt, no coalescing.
 package config
 
 import (
@@ -26,12 +17,6 @@ type Config struct {
 	SMTPPassword string
 	FromEmail    string
 
-	// Optional recipient-domain allow-list. When non-empty, sendMail
-	// refuses (fail-fast) to deliver to any address whose domain is
-	// not on this list. Intended for local-dev SMTP setups that can
-	// only deliver to internal domains; an empty value disables the
-	// check entirely so production paths through transactional relays
-	// (Mailgun, etc.) are unaffected.
 	AllowedRecipientDomains []string
 
 	AppBaseURL        string

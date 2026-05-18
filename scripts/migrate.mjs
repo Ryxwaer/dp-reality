@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-//
-// One-shot reset to a clean database.
-//
-// What it does:
-//   db.dropDatabase()
-//
-// That's it. Every collection (users, notifications, module_registry,
-// each bot's listings_<source> + <source>_config) goes. The bot
-// services recreate their indexes and re-register on next boot;
-// users start with an empty inbox.
-//
-// Refuses to run in production without FORCE_MIGRATE=1.
 import process from 'node:process'
 import { MongoClient } from 'mongodb'
 

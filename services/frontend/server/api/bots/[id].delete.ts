@@ -3,18 +3,6 @@ import { getDb, COLLECTIONS } from '~~/server/utils/db'
 import { findRegistryEntry } from '~~/server/utils/registry'
 import type { StoredBot } from '~~/server/utils/auth'
 
-// Delete a configuration. The BFF resolves the bot's config collection
-// from module_registry.config_collection, drops the row directly,
-// then updates users.bots[]:
-//
-//   - committed bots (status = 'active' | 'stopped') are soft-deleted
-//     so historical notifications keep resolving the bot's name;
-//   - provisional rows (status = 'pending') are hard-pulled because
-//     there are no historical notifications to preserve and we don't
-//     want orphans accumulating in users.bots[].
-//
-// Order matters: drop the bot-owned row first so the matcher stops
-// producing notifications even if the second write fails.
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const configId = getRouterParam(event, 'id')
@@ -34,9 +22,6 @@ export default defineEventHandler(async (event) => {
   if (registry && registry.config_collection) {
     await db.collection(registry.config_collection).deleteOne({ _id: configId as never })
   }
-  // Note: a missing registry entry (e.g. bot service was de-registered
-  // before this delete) leaves any orphan <bot>_config row behind. The
-  // janitor's orphan sweep will pick it up on the next pass.
 
   if (existing.status === 'pending') {
     await db.collection(COLLECTIONS.users).updateOne(

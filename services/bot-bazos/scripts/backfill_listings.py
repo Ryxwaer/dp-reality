@@ -1,27 +1,3 @@
-"""One-off backfill of `listings_bazos` using the bot's own scraper.
-
-The live scheduler in `src/cycle.py` calls `scraper.fetch_listings` with
-`SCRAPE_PAGES` (defaults to 5), so each cycle only walks the first
-~5*20=100 listings per (price_type, property_type) bucket. That is
-enough to catch *new* listings as they appear at the top of every
-category page, but it leaves the long tail of currently-active bazos
-listings invisible to the matcher.
-
-This script reuses the bot's exact scraping primitives — the
-`_build_category_matrix`, `_scrape_category`, and
-`repository.upsert_listings` functions — but walks each category to the
-end (bazos returns 404 once `page*20` exceeds the row count, which
-`_scrape_category` interprets as end-of-pagination). It deliberately
-skips the matcher/notifier so the backfilled rows do not spam users.
-
-Run inside the bot-bazos container (so it has motor, httpx, bs4, etc.):
-
-    docker exec -i dp-reality-bot-bazos \
-        python -m scripts.backfill_listings
-
-or, after `docker cp`ing the file into /app/scripts/, the same `-m`
-invocation works because /app is the bot's WORKDIR.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -36,9 +12,6 @@ import motor.motor_asyncio
 from src import repository, scraper
 from src.config import settings
 
-# Safety ceiling. Bazos' largest category tops out around ~4k pages on
-# the long tail (page=10000 is 404 across every category we tested), so
-# 20000 is "effectively unbounded" while still bounding the loop.
 PAGES_LIMIT = 20_000
 
 logging.basicConfig(
@@ -82,7 +55,7 @@ async def _backfill() -> None:
             totals["upserted"] += len(new_listings)
             totals["categories"] += 1
             logger.info(
-                "[%s] done — scraped=%d new=%d (cumulative scanned=%d upserted=%d)",
+                "[%s] done, scraped=%d new=%d (cumulative scanned=%d upserted=%d)",
                 tag,
                 len(category_listings),
                 len(new_listings),

@@ -23,8 +23,6 @@ describe('sanitizeNotificationHtml', () => {
   it('drops javascript: URLs from img src', () => {
     const out = sanitizeNotificationHtml('<img src="javascript:alert(1)" alt="x">')
     expect(out).not.toContain('javascript:')
-    // The element may survive without the bad attribute; what matters
-    // is that no script vector remains.
     expect(out).not.toMatch(/src="javascript/)
   })
 

@@ -19,28 +19,16 @@ class GeoPoint {
 
 @Schema({ _id: false })
 export class SrealityBotConfig {
-  // 1 = byt (apartment), 2 = dum (house)
   @Prop() category_main_cb?: number;
-  // 1 = sale, 2 = rent
   @Prop() category_type_cb?: number;
   @Prop({ type: [Number], default: [] }) category_sub_cb!: number[];
   @Prop() price_min?: number;
   @Prop() price_max?: number;
-  // Geographic radius filter. All three of (region_id, center,
-  // radius_km) are written together or not at all — the matcher treats
-  // a partial geo triple as a configuration bug, not a wildcard.
   @Prop() region_id?: string;
   @Prop({ type: GeoPoint }) center?: GeoPoint;
   @Prop() radius_km?: number;
   @Prop() region_label?: string;
 
-  // Optional structural filters derived from sreality's labelsAll[0]
-  // taxonomy. Empty / undefined = "any". Semantics:
-  //   *_in arrays  : listing.<field>     ∈ array     (single-valued)
-  //   condition_in : listing.condition_set ∩ array ≠ ∅ (multi-valued)
-  //   amenities_all: listing.amenity_set ⊇ array     (multi-valued ALL)
-  //   media_required: every listed flag must be true on the listing
-  //   exclude_rk_exclusive: drop listings flagged `exclusively_at_rk`
   @Prop({ type: [String], default: [] }) ownership_in!: Ownership[];
   @Prop({ type: [String], default: [] }) building_type_in!: BuildingType[];
   @Prop({ type: [String], default: [] }) condition_in!: Condition[];

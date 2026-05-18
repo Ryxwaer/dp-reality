@@ -55,13 +55,6 @@ def _format_filter_summary(cfg: BotConfig) -> str:
 
 
 async def _count_matching(db: AsyncIOMotorDatabase, cfg: BotConfig) -> int:
-    """Count currently-stored listings that satisfy the matcher.
-
-    Runs the matcher in-process so the same code decides what counts as
-    a match here and what triggers a notification in the scrape cycle.
-    Acceptable cost: a one-shot per bot creation against a bounded
-    collection at this project's scale.
-    """
     allowed_pscs: set[str] | None = None
     if cfg.psc and cfg.radius_km:
         allowed_pscs = await geo.in_radius_by_psc(db, cfg.psc, cfg.radius_km)

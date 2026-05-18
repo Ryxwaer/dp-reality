@@ -21,9 +21,6 @@ export class CycleService {
     private readonly regionResolver: RegionResolverService,
   ) {}
 
-  // Evaluate every active configuration against the freshly inserted
-  // listings and publish exactly one notify.bot.processed per (user,
-  // bot, run) for which at least one new notification row was inserted.
   async matchAndNotify(newListings: Listing[], runId: string): Promise<void> {
     if (!newListings.length) return;
 
@@ -71,14 +68,6 @@ export class CycleService {
     }
   }
 
-  // A null result means "no radius-filter configured" — the matcher
-  // skips the geographic check entirely. We do *not* lazy-resolve
-  // missing polygons here: that would couple every match cycle to
-  // Nominatim, hammer their service, and stall the cycle on transient
-  // failures. Resolution is the responsibility of the save path
-  // (BotsController + ParseUrlController), so by the time a config is
-  // persisted its sreality_geo entry already carries either a polygon
-  // or a deliberate "no polygon for this type" marker.
   private async buildPredicateFor(
     cfg: SrealityBotConfig,
   ): Promise<RegionPredicate | null> {

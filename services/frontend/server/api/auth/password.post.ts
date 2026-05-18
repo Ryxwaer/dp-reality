@@ -23,10 +23,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Current password is incorrect' })
   }
 
-  // Bcrypt cost factor of 12 matches §3.7.3 ("cost factor appropriate
-  // to the deployment hardware"). 12 takes ~250 ms on the Minisforum
-  // and ~600 ms on a RPi5 — slow enough to make offline guessing
-  // expensive, fast enough to keep the request under a second.
   const password_hash = await hash(body.new, 12)
 
   const db = await getDb()
@@ -34,9 +30,6 @@ export default defineEventHandler(async (event) => {
     .collection(COLLECTIONS.users)
     .updateOne({ _id: user._id }, { $set: { password_hash } })
 
-  // Rotate the CSRF token on privilege change so any token that
-  // escaped via an XSS scrape before the password was rotated is
-  // useless on the new credential.
   await rotateCsrfToken(event)
 
   return { ok: true }

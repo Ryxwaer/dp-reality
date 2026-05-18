@@ -6,12 +6,6 @@ from typing import Any
 
 import aio_pika
 
-# Two fanout exchanges with distinct payload contracts:
-#   notify.bot.processed — pointer tuple {user_id, bot_id, run_id};
-#       emitted at most once per (user, bot, run); consumers read
-#       freshly-written rows from the shared `notifications` collection.
-#   notify.bot.welcome   — event-carried state, includes (subject, html);
-#       email-notifier sends immediately, never touches notifications.
 EXCHANGE_PROCESSED = "notify.bot.processed"
 EXCHANGE_WELCOME = "notify.bot.welcome"
 

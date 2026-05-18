@@ -35,10 +35,6 @@ interface Parsed {
   furnished_in?: Furnished[];
 }
 
-// Sreality URL → typed-tag mappings, validated empirically against
-// the live site (only entries that visibly change the result count
-// are mapped; the others land in URLs but are ignored server-side
-// and therefore would be misleading to advertise as filters).
 const VLASTNICTVI_TO_OWNERSHIP: Record<string, Ownership> = {
   osobni: 'personal',
   druzstevni: 'cooperative',

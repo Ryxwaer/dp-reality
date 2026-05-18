@@ -3,9 +3,6 @@ import type { HydratedDocument } from 'mongoose';
 
 export type ModuleRegistryDocument = HydratedDocument<ModuleRegistryEntry>;
 
-// `bot_id` uniqueness is enforced by the BFF-owned `bot_id_unique`
-// index. We disable autoIndex here so Mongoose does not create a
-// competing `bot_id_1` index on boot.
 @Schema({
   collection: 'module_registry',
   timestamps: false,

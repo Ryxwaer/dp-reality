@@ -26,10 +26,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Invalid credentials' })
   }
 
-  // Visit-to-refresh (FR-02-B): every login pushes the expiry of all
-  // of the user's `active` bots forward. A user who stops logging in
-  // will see their active bots transition to `stopped` once the daily
-  // sweep (deferred) catches up.
   await bumpExpiresAt(doc._id)
 
   await setUserSession(event, {

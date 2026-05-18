@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 
 class CreateBody(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
-    # Forwarded only so the welcome card can address the user's bot by
-    # the dashboard name they chose; the bot never persists it.
     bot_name: str = Field(default="", max_length=200)
 
 
@@ -36,14 +34,6 @@ _PROPERTY_TYPES = {
 
 
 def parse_bazos_url(raw: str) -> dict[str, Any]:
-    """Translate a reality.bazos.cz filter URL into a partial config.
-
-    Only fields that appear in the URL are returned. Anything that fails
-    to validate (non-numeric price, non-5-digit hlokalita, out-of-range
-    humkreis) is reported back as `{ok: false, reason: ...}` rather than
-    silently dropped — otherwise the user would see the form populate
-    "successfully" with a different filter than the one they pasted.
-    """
     trimmed = (raw or "").strip()
     if not trimmed:
         return {"ok": False, "reason": "Paste a bazos.cz search URL."}
@@ -128,9 +118,6 @@ def build_router() -> APIRouter:
         q: str = Query(..., min_length=1, max_length=80),
         limit: int = Query(8, ge=1, le=20),
     ) -> JSONResponse:
-        # Dispatcher: numeric q → PSČ prefix scan; otherwise → city
-        # name (diacritic- and case-insensitive). One endpoint powers
-        # the combined "City or PSČ" autocomplete in the configure form.
         db, _ = _state(request)
         hits = await geo.suggest(db, q, limit=limit)
         return JSONResponse({"results": hits})
@@ -145,9 +132,6 @@ def build_router() -> APIRouter:
         doc = await repository.fetch_config(db, config_id)
         if not doc:
             raise HTTPException(status_code=404, detail="config not found")
-        # The /modules/* reverse proxy proves the caller's identity by
-        # injecting user_id from the session; we refuse to serve another
-        # user's row even if the config_id leaked.
         if str(doc.get("user_id")) != user_id:
             raise HTTPException(status_code=404, detail="config not found")
         return JSONResponse(_serialize_config(doc))

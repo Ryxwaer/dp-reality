@@ -91,9 +91,6 @@ export class RepositoryService {
     );
   }
 
-  // Idempotent on (user_id, bot_id, source_ref): a second matching
-  // configuration of the same user grows config_ids[] on the existing
-  // row instead of inserting a duplicate.
   async insertNotifications(
     rows: Array<{
       user_id: string;

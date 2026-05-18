@@ -1,11 +1,3 @@
-# Tempo single-binary config for the local dev stack. Mirrors the
-# minimum subset of `flux/infra/prod/tempo.yaml`'s Helm values that
-# matters for "spans land, traces queryable, service-graph metrics
-# generated": OTLP gRPC + HTTP receivers, local block storage, and the
-# metrics_generator turning every span into service_graph_* and
-# traces_spanmetrics_* feeds. The dev stack has no Prometheus, so the
-# generator's remote_write target is unset (the chart provides one in
-# prod); generated metrics stay in Tempo's in-memory registry only.
 stream_over_http_enabled: true
 server:
   http_listen_port: 3200
@@ -40,18 +32,6 @@ metrics_generator:
     service_graphs:
       wait: 10s
       max_items: 10000
-      # Mirror flux/infra/prod/tempo.yaml: the default
-      # peer_attributes set (peer.service / db.name / db.system) does
-      # not include the new HTTP semantic conv `server.address`, so
-      # outbound HTTP edges to untraced peers (e.g.
-      # `bot-bazos -> reality.bazos.cz`) get dropped. Adding
-      # server.address pulls them back in. db.system /
-      # messaging.system pin DB and broker peers to canonical labels
-      # (`mongodb`, `rabbitmq`) regardless of how each driver names
-      # the connection. database_name_attributes overrides the same
-      # behaviour specifically for database client spans, where Tempo
-      # otherwise prefers `db.namespace` (the database name) over
-      # `db.system` (the engine name).
       peer_attributes:
         - peer.service
         - db.system

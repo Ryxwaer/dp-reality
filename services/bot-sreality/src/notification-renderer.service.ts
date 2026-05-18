@@ -43,11 +43,6 @@ function formatLabels(labels: string[]): string {
   return `<div style="margin-top:8px">${chips}</div>`;
 }
 
-// Anchor-free by contract: the returned HTML carries only the visual
-// content. The listing URL stays on the structured `url` field of the
-// notification row; each consumer wraps the whole card in a single
-// tile-wide <a>. Embedding an inner <a> here would cause HTML5 parsers
-// to close the outer wrapper, collapsing the tile click area.
 @Injectable()
 export class NotificationRendererService {
   renderCard(listing: Listing): string {

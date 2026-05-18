@@ -38,18 +38,11 @@ class Settings(BaseSettings):
     scrape_pages: int = 3
     scrape_page_size: int = 30
 
-    # Anti-bot countermeasures (NFR-01-B). The bot sleeps between every
-    # list-endpoint fetch, and on a 429/403 the cycle layer skips ahead.
     scrape_throttle_seconds_between_pages: float = 2.0
     backoff_minutes_on_block: int = 30
     max_detail_fetches_per_cycle: int = 60
 
-    # `missing` (default) seeds `bezrealitky_geo` only on first boot;
-    # `always` re-upserts every boot; `never` skips the seeder.
     geo_seed_mode: str = "missing"
-    # User-Agent presented to bezrealitky's `czechRegions` and to
-    # Nominatim. Nominatim's usage policy requires a real contact in
-    # this string; override via env in production.
     geo_user_agent: str = "dp-reality-bot-bezrealitky/1.0 (https://github.com/ryxwaer/dp-reality)"
 
     service_id: str = "bot-bezrealitky"

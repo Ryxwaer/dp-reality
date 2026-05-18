@@ -7,10 +7,6 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-// Source of truth for what services are available right now. Each row
-// is published by a running bot service via self-registration; the
-// per-card "Add bot" button falls back to a 404 toast if the BFF
-// cannot route to the service when the wizard's Next is pressed.
 const { data: registry, status, refresh } = await useFetch<{ items: ModuleRegistryEntry[] }>(
   '/api/modules/registry',
   { default: () => ({ items: [] }), lazy: true }
@@ -18,8 +14,6 @@ const { data: registry, status, refresh } = await useFetch<{ items: ModuleRegist
 
 const items = computed(() => registry.value?.items ?? [])
 
-// Free-form filter over display name / description / bot_id so the
-// user can search even when there are dozens of services.
 const search = ref('')
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -32,8 +26,6 @@ const filtered = computed(() => {
   )
 })
 
-// Group by category and sort each group alphabetically. The category
-// header itself is human-prettified ("real-estate" → "Real estate").
 type Group = { id: string, label: string, items: ModuleRegistryEntry[] }
 
 function prettyCategory(slug: string): string {
@@ -60,9 +52,6 @@ const groups = computed<Group[]>(() => {
       items: arr.slice().sort((a, b) => a.display_name.localeCompare(b.display_name))
     }))
     .sort((a, b) => {
-      // Push the catch-all "Other" group to the end; everything else
-      // is alphabetical so the layout is stable as new categories
-      // come online.
       if (a.id === 'other') return 1
       if (b.id === 'other') return -1
       return a.label.localeCompare(b.label)
@@ -75,9 +64,6 @@ function iconFor(botId: string): string {
   return 'i-lucide-plug'
 }
 
-// Bot config dialog state. The store page hands the registry entry to
-// the wizard; the wizard's Step 1 collects name + email, and the BFF
-// is only contacted when the user clicks Next (Step 1 -> Step 2).
 const configRegistry = ref<ModuleRegistryEntry | null>(null)
 
 function pick(entry: ModuleRegistryEntry) {
@@ -98,8 +84,6 @@ function onConfigCancelled() {
   closeConfig()
 }
 
-// `?install=<bot_id>` deep-links from the dashboard "New bot" button
-// directly into the picker action so the redirect feels seamless.
 onMounted(() => {
   const want = route.query.install
   if (typeof want === 'string' && want) {
@@ -109,9 +93,6 @@ onMounted(() => {
   }
 })
 
-// If the registry was hydrated server-side and a category arrives
-// later (e.g. a bot service comes online while the page is open),
-// we want the new card to appear without a manual reload.
 const pollHandle = ref<ReturnType<typeof setInterval> | null>(null)
 onMounted(() => {
   pollHandle.value = setInterval(() => { void refresh() }, 30_000)

@@ -19,9 +19,6 @@ const priceTypeItems = [
 const disposition = ref<DispositionFilter>(ALL)
 const priceType = ref<'sale' | 'rent'>('sale')
 
-// Skip SSR for this fetch: the endpoint is auth-gated and the payload (~28k
-// listings) would bloat the hydration HTML. Reactive `query` makes useFetch
-// auto-refetch when the filters change.
 const { data, status } = useFetch<ListingsMapResponse>('/api/stats/listings-heatmap', {
   query: computed(() => ({
     ...(disposition.value !== ALL ? { disposition: disposition.value } : {}),
@@ -44,7 +41,6 @@ const formatPrice = (n: number) => {
   return `${n} Kč`
 }
 
-// Shared with the map child so legend swatches stay in sync with marker fills.
 const BIN_COLORS = ['#2563eb', '#06b6d4', '#9ca3af', '#f59e0b', '#ef4444'] as const
 const BIN_LABELS = ['Cheapest 20%', 'Below median', 'Median', 'Above median', 'Top 20%'] as const
 </script>
@@ -88,22 +84,7 @@ const BIN_LABELS = ['Cheapest 20%', 'Below median', 'Median', 'Above median', 'T
     </template>
 
     <div class="relative">
-      <!--
-        ClientOnly defers mounting HomeHeatmapMap until *after* the parent's
-        onMounted, which means Leaflet only initialises once the dashboard's
-        nested flex/scroll layout has fully settled. This is the same lifecycle
-        an SPA navigation gives us — and is why navigating away + back used to
-        "fix" the map. The fallback reserves the same h-112 box so there's no
-        layout shift between SSR HTML and the real map.
-      -->
       <ClientOnly>
-        <!--
-          The `Lazy` prefix turns this into an async component (dynamic
-          import()), so HomeHeatmapMap.vue's top-level `import 'leaflet'`
-          (which touches `window`) is never evaluated during SSR. ClientOnly
-          alone wouldn't be enough — its tree-shaking only skips rendering,
-          not the module load triggered by Nuxt's auto-import scaffolding.
-        -->
         <LazyHomeHeatmapMap
           :data="data ?? { listings: [], breakpoints: [0, 0, 0, 0], median: 0, count: 0 }"
           :bin-colors="BIN_COLORS"

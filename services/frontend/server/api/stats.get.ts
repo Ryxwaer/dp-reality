@@ -9,16 +9,10 @@ interface StatsResponse {
   unread_matches: number
 }
 
-// Home dashboard stats. The BFF doesn't query bot-owned listing
-// collections (those are encapsulated by their bot service), so we
-// surface what we own: notification counts and the user's bot roster.
 export default defineEventHandler(async (event): Promise<StatsResponse> => {
   const user = await requireUser(event)
   const db = await getDb()
 
-  // Bot services persist `user_id` as a hex string into `notifications`,
-  // so query that collection by the same string form rather than the
-  // canonical ObjectId stored on the user document itself.
   const userIdHex = user._id.toHexString()
   const [totalMatches, unreadMatches] = await Promise.all([
     db.collection(COLLECTIONS.notifications).countDocuments({ user_id: userIdHex }),

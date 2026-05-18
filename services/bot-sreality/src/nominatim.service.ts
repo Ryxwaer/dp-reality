@@ -7,9 +7,6 @@ const NOMINATIM_LOOKUP = 'https://nominatim.openstreetmap.org/lookup';
 const USER_AGENT =
   'dp-reality bot-sreality/1.0 (https://github.com/ryxwaer/dp-reality; sreality region resolver)';
 
-// Sreality entity types → expected Nominatim administrative level. We
-// use this as a soft preference when ranking candidates; if no exact
-// match is returned, the first `boundary/administrative` relation wins.
 const SREALITY_TO_ADMIN_LEVEL: Record<string, number[]> = {
   country: [2],
   region: [6],
@@ -39,9 +36,6 @@ export interface ResolvedRegion {
   display_name: string;
 }
 
-// Nominatim's usage policy is 1 req/sec absolute. We serialise all
-// outbound calls through a single async chain so concurrent callers
-// can't accidentally burst.
 @Injectable()
 export class NominatimService {
   private readonly logger = new Logger(NominatimService.name);
@@ -66,9 +60,6 @@ export class NominatimService {
     };
   }
 
-  // Re-fetch a previously resolved record to refresh its polygon. Used
-  // when an existing sreality_geo entry has an osm_id but no geometry
-  // (e.g. node-only relations that later acquired a polygon upstream).
   async lookupByOsmId(osmId: number): Promise<ResolvedRegion> {
     const url = NOMINATIM_LOOKUP;
     const params = {
@@ -136,7 +127,6 @@ function pickBestRelation(hits: NominatimHit[], regionTyp: string): NominatimHit
     (h) => h.osm_type === 'relation' && h.class === 'boundary' && h.type === 'administrative',
   );
   if (relations.length === 0) {
-    // Streets and similar non-admin entries: any relation will do.
     const fallback = hits.find((h) => h.osm_type === 'relation');
     return fallback ?? null;
   }

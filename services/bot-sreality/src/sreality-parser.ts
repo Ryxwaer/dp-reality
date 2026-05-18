@@ -66,11 +66,6 @@ interface DerivedLabels {
   amenity_set: Amenity[];
 }
 
-// Project the heterogeneous `labelsAll[0]` tag bag into the typed
-// fields the matcher uses. Single-valued taxonomies (ownership, type,
-// furnished) are populated by the *first* matching tag — sreality's
-// labelsAll is sorted with the canonical value first; later
-// duplicates are noise.
 function projectLabels(labels: string[]): DerivedLabels {
   const out: DerivedLabels = { condition_set: [], amenity_set: [] };
   const seenAmenities = new Set<Amenity>();
@@ -119,10 +114,6 @@ function buildUrl(
   return `https://www.sreality.cz/detail/${saleRent}/${propSlug}/${dispSlug}/${estate.seo.locality}/${estate.hash_id}`;
 }
 
-// Stable composite key. `seo.locality` is the URL slug Sreality assigns
-// (street + district), constant across republishes. Including `price`
-// means a price change deliberately produces a new key → new doc → new
-// notification.
 function buildDedupeKey(
   estate: SrealityEstate,
   priceType: 'sale' | 'rent',
@@ -144,9 +135,6 @@ export function parseEstate(
   if (!sourceId || sourceId === '0') return null;
   if (!estate.seo?.locality) return null;
 
-  // Sreality returns GPS for every active estate. A missing or zero
-  // coordinate pair therefore signals a malformed payload, not a
-  // routine miss — fail loud instead of silently dropping the listing.
   if (
     !estate.gps ||
     !Number.isFinite(estate.gps.lat) ||

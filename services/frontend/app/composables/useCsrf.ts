@@ -1,14 +1,3 @@
-/**
- * Read the double-submit CSRF token cookie set server-side by the
- * session util and expose it as a header object ready to be spread
- * into a `$fetch` call's `headers`.
- *
- * `headers()` is a function (not a computed) on purpose: it reads
- * `document.cookie` at call time, so a token rotation (login,
- * password change) is reflected on the very next request without
- * needing to re-mount the page or re-create the composable.
- */
-
 const COOKIE_NAME = 'csrf-token'
 
 function readCookie(name: string): string | null {

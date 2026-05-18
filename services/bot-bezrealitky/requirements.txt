@@ -10,16 +10,6 @@ tenacity==9.1.4
 shapely==2.1.2
 pyproj==3.7.2
 
-# OpenTelemetry — emit OTLP/gRPC spans to Tempo. The aio-pika
-# instrumentation auto-injects W3C traceparent on publish so the
-# email-notifier's manual extraction continues the same trace; the
-# pymongo instrumentation covers Motor (Motor wraps PyMongo); the
-# httpx + fastapi instrumentations cover both directions of HTTP
-# traffic between the BFF and this bot. From 0.50b0 onwards the HTTP
-# instrumentations emit the new (stable) HTTP semantic conventions
-# by default — `server.address`, `http.request.method`, `url.full`
-# — which is what Tempo's `service_graphs` processor uses to label
-# outbound peers.
 opentelemetry-sdk==1.41.1
 opentelemetry-exporter-otlp-proto-grpc==1.41.1
 opentelemetry-instrumentation-aio-pika==0.62b1

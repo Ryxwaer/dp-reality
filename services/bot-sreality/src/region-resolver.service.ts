@@ -4,9 +4,6 @@ import type { Model } from 'mongoose';
 import { Region, type RegionDocument } from './region.schema.js';
 import { NominatimService } from './nominatim.service.js';
 
-// `street` entries are streets, not areas — Nominatim returns them as
-// `way`s with no usable polygon. We don't even try; the matcher falls
-// back to centre+radius for them.
 const TYPES_WITHOUT_POLYGON = new Set(['street']);
 
 @Injectable()
@@ -18,11 +15,6 @@ export class RegionResolverService {
     private readonly nominatim: NominatimService,
   ) {}
 
-  // Make sure the sreality_geo entry for `regionId` carries a polygon
-  // (or has been deliberately marked as polygon-less). Called from
-  // BotsController and ParseUrlController so that any config we accept
-  // either matches with a real polygon-buffer or transparently degrades
-  // to centre+radius for the handful of types where that's correct.
   async ensureResolved(regionId: string): Promise<RegionDocument> {
     const doc = await this.regions.findById(regionId).exec();
     if (!doc) {
@@ -57,9 +49,6 @@ export class RegionResolverService {
     return refreshed;
   }
 
-  // Used by CycleService to load the records referenced by a config's
-  // `region_id`. Polygons are returned when present; callers must
-  // tolerate their absence and fall back to centre+radius.
   async findById(regionId: string): Promise<RegionDocument | null> {
     return this.regions.findById(regionId).exec();
   }

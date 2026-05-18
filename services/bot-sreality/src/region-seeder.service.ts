@@ -18,10 +18,6 @@ interface RegionPayload {
   center: Region['center'];
 }
 
-// Loads the bundled `regions.json` produced by `scripts/dump-regions.ts`
-// into the `sreality_geo` collection on first boot. The dataset is
-// pinned per image tag — refreshing it is a deliberate, scheduled
-// rebuild, not a runtime concern.
 @Injectable()
 export class RegionSeederService implements OnModuleInit {
   private readonly logger = new Logger(RegionSeederService.name);

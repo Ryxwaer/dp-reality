@@ -42,7 +42,6 @@ export async function findRegistryEntry(botId: string): Promise<ModuleRegistryEn
 
 const SAFE_BOT_ID = /^[a-z][a-z0-9_-]{0,62}$/
 
-/** Guard: only bot ids matching the safe pattern can be reverse-proxied. */
 export function isSafeBotId(name: string): boolean {
   return SAFE_BOT_ID.test(name)
 }

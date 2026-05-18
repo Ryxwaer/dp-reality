@@ -1,6 +1,3 @@
-// Telemetry MUST be the first import: the OpenTelemetry SDK patches
-// Node's module loader to wrap downstream packages, so any module
-// loaded before this one would never be traced.
 import './telemetry.js';
 
 import 'reflect-metadata';

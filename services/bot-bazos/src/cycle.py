@@ -46,18 +46,13 @@ async def run_cycle(
             _MAX_CONSECUTIVE_FAILURES,
         )
         if _consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-            logger.critical("Consecutive failure threshold reached — exiting for restart")
+            logger.critical("Consecutive failure threshold reached, exiting for restart")
             os._exit(1)
 
 
 async def _resolve_allowed_pscs(
     db: AsyncIOMotorDatabase, cfg: BotConfig
 ) -> set[str] | None:
-    """Pre-compute the set of PSČs that pass the (psc, radius_km) gate.
-
-    Returns None when the config doesn't enable radius filtering, in
-    which case the matcher falls back to (optional) exact-PSČ equality.
-    """
     if not cfg.psc or not cfg.radius_km:
         return None
     return await geo.in_radius_by_psc(db, cfg.psc, cfg.radius_km)
@@ -85,10 +80,8 @@ async def _match_and_notify(
         try:
             allowed_pscs = await _resolve_allowed_pscs(db, cfg)
         except LookupError as err:
-            # The user gave us a PSČ that isn't in the GeoNames dump.
-            # Skip just this one config; other users keep being processed.
             logger.error(
-                "geo lookup failed for config %s (psc=%s, km=%s): %s — skipping",
+                "geo lookup failed for config %s (psc=%s, km=%s): %s, skipping",
                 cfg_doc.get("_id"), cfg.psc, cfg.radius_km, err,
             )
             continue
@@ -105,10 +98,6 @@ async def _match_and_notify(
                     )
                 )
 
-    # The repository upsert collapses two matching configs of the same
-    # user/bot/listing into one row (config_ids[] tracks which configs
-    # hit). Emit exactly one notify.bot.processed per user for whom at
-    # least one row was newly inserted in this cycle.
     users_with_inserts: set[str] = set()
     for user_id, rows in rows_by_user.items():
         if not rows:

@@ -1,22 +1,3 @@
-/**
- * One-off backfill for the `listings_sreality` collection.
- *
- * The live scraper in `src/scraper.service.ts` only fetches page 1 of
- * each category every cycle, so it can only ever discover the *newest*
- * 60 records per category since it was deployed. That leaves the long
- * tail of currently-active sreality listings invisible to the
- * matcher/notifier.
- *
- * This script walks every page of every category through
- * `/api/cs/v2/estates` with `per_page=500`, parses the payload with the
- * exact same logic as the live scraper (via `../src/sreality-parser`),
- * and bulk-upserts directly into Mongo with a synthetic `run_id`. It
- * deliberately does NOT publish notifications — the backfill represents
- * historical state, not new events.
- *
- * Usage:
- *   MONGODB_URI=mongodb://... bun run scripts/backfill-listings.ts
- */
 import axios, { AxiosError } from 'axios';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
@@ -146,8 +127,6 @@ async function backfillCategory(
         seen.add(listing._id);
         parsed.push(listing);
       } catch (err) {
-        // parseEstate fails loud on missing GPS — log and skip the row
-        // rather than aborting the whole backfill mid-stream.
         skipped++;
         process.stderr.write(
           `  skip estate ${est.hash_id}: ${(err as Error).message}\n`,

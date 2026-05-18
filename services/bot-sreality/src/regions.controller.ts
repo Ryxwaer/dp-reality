@@ -37,9 +37,6 @@ function toHit(doc: Region): RegionHit {
   };
 }
 
-// Sreality-native region vocabulary served from the local
-// `sreality_geo` collection. Replaces the previous /suggest endpoint
-// and removes the bot's runtime dependency on sreality.cz/api/cs/v2/suggest.
 @Controller('regions')
 export class RegionsController {
   constructor(

@@ -1,14 +1,3 @@
-"""Seed a test user with diverse bot configurations across all three bot services.
-
-Run once to provision /reality/.../test fixtures for end-to-end matching
-verification. All bots are inserted with email_notifications=false so the
-notifier never fires; the goal is to populate the inbox via the
-matching pipeline only.
-
-  $ python3 scripts/seed_test_user.py
-
-Re-running deletes any prior test-user state and rewrites it cleanly.
-"""
 from __future__ import annotations
 
 import os
@@ -20,13 +9,13 @@ from bson import ObjectId
 from pymongo import MongoClient
 from termcolor import cprint
 
-MONGO_URI = os.environ.get(
-    "MONGO_URI",
-    "mongodb://dpadmin:140111ad0c48f07af9fdc781e4fb995e6b1cc0f7baaf5fdb@100.68.207.89:27017/dp-reality?authSource=admin&directConnection=true",
-)
+MONGO_URI = os.environ.get("MONGO_URI") or os.environ.get("MONGODB_URI")
+if not MONGO_URI:
+    raise SystemExit("Set MONGO_URI or MONGODB_URI before running this script.")
+
 TEST_EMAIL = "bot-tester@dp-reality.test"
 TEST_NAME = "Bot Tester"
-TEST_PASSWORD = "TestUser2026!"
+TEST_PASSWORD = os.environ.get("TEST_PASSWORD", "TestUser2026!")
 TTL_DAYS = 30
 
 
@@ -41,11 +30,6 @@ def make_unsubscribe_token() -> str:
 def now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
-
-# ---------------------------------------------------------------------------
-# Bot configurations: each tuple is (display name, config-document payload).
-# The bot service interprets `config` as the user-supplied filter sub-doc.
-# ---------------------------------------------------------------------------
 
 BAZOS_CONFIGS = [
     (
@@ -84,9 +68,6 @@ BAZOS_CONFIGS = [
     ),
 ]
 
-# Sreality codes: category_main_cb 1=byt 2=dum 3=pozemek;
-# category_type_cb 1=prodej 2=pronajem 3=drazba.
-# Region municipality:5740 = Brno (centre 16.607841, 49.200221).
 SREALITY_CONFIGS = [
     (
         "Sreality broad byty",
@@ -171,7 +152,6 @@ SREALITY_CONFIGS = [
     ),
 ]
 
-# Bezrealitky: osm_id 438171 = Brno (city). disposition codes match enum.
 BEZREALITKY_CONFIGS = [
     (
         "Bezrealitky broad prodej",
@@ -242,10 +222,9 @@ def main() -> None:
     client = MongoClient(MONGO_URI)
     db = client.get_database("dp-reality")
 
-    # 1) Wipe any prior test-user state.
     prior = db.users.find_one({"email": TEST_EMAIL})
     if prior:
-        cprint(f"Found existing test user {prior['_id']} — cleaning up.", "yellow")
+        cprint(f"Found existing test user {prior['_id']}, cleaning up.", "yellow")
         prior_hex = str(prior["_id"])
         for bot in (prior.get("bots") or []):
             collection = next(
@@ -258,7 +237,6 @@ def main() -> None:
         db.notifications.delete_many({"user_id": prior_hex})
         cprint("  prior user, configs, and notifications deleted.", "yellow")
 
-    # 2) Create the user.
     user_id = ObjectId()
     user_id_hex = str(user_id)
     password_hash = bcrypt.hashpw(
@@ -285,7 +263,6 @@ def main() -> None:
     db.users.insert_one(user_doc)
     cprint(f"Created user {user_id_hex} ({TEST_EMAIL}).", "green")
 
-    # 3) For each bot, insert configs into <bot>_config and append metadata.
     grand_total = 0
     for bot_id, config_collection, plan in BOT_PLAN:
         cprint(f"\n→ {bot_id} ({len(plan)} configs)", "cyan")
@@ -315,7 +292,6 @@ def main() -> None:
             cprint(f"   • {display_name}  ({config_id})", "white")
             grand_total += 1
 
-    # 4) Persist the populated bots[] array on the user.
     db.users.update_one({"_id": user_id}, {"$set": {"bots": bots_meta}})
 
     cprint(

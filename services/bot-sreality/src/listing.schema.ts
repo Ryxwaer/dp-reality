@@ -3,9 +3,6 @@ import type { HydratedDocument } from 'mongoose';
 
 export type ListingDocument = HydratedDocument<Listing>;
 
-// All sreality `labelsAll[0]` tag taxonomies live here so the scraper,
-// matcher, and configure UI agree on the exact strings. Inferred from a
-// 200-listing sample of /api/cs/v2/estates.
 export type Ownership = 'personal' | 'cooperative' | 'state' | 'collective';
 export type BuildingType = 'brick' | 'panel' | 'wooden' | 'mixed' | 'skeletal' | 'stone' | 'assembled';
 export type Furnished = 'furnished' | 'not_furnished' | 'partly_furnished';
@@ -34,11 +31,9 @@ class GeoPoint {
 
 @Schema({ collection: 'listings_sreality', timestamps: false, versionKey: false })
 export class Listing {
-  // sha256(key) — stable across republishes; changes only when `key` does.
   @Prop({ required: true, type: String }) _id!: string;
   @Prop({ required: true }) key!: string;
 
-  // Analytics base schema
   @Prop({ required: true }) title!: string;
   @Prop({ required: true }) property_type!: 'apartment' | 'house';
   @Prop() disposition?: string;
@@ -51,7 +46,6 @@ export class Listing {
   @Prop() last_seen?: Date;
   @Prop() run_id?: string;
 
-  // Sreality-specific tail
   @Prop({ required: true }) source_id!: string;
   @Prop() locality?: string;
   @Prop({ type: GeoPoint }) gps?: GeoPoint;
@@ -59,12 +53,8 @@ export class Listing {
   @Prop() category_sub_cb?: number;
   @Prop() category_type_cb?: number;
 
-  // Raw `labelsAll[0]` for traceability/debugging.
   @Prop({ type: [String], default: [] }) labels!: string[];
 
-  // Typed projections of `labelsAll[0]` and a couple of top-level
-  // boolean flags. Matcher reads exclusively from these so no listing
-  // is ever filtered by a string scan.
   @Prop({ type: String }) ownership?: Ownership;
   @Prop({ type: String }) building_type?: BuildingType;
   @Prop({ type: String }) furnished?: Furnished;

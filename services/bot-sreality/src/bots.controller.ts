@@ -75,8 +75,6 @@ function normalizeConfig(input: Partial<SrealityBotConfig> | undefined): Srealit
   if (typeof c.price_min === 'number') out.price_min = c.price_min;
   if (typeof c.price_max === 'number') out.price_max = c.price_max;
 
-  // All-or-nothing on the geo set. Persisting only part of it would
-  // leave the matcher with a half-disabled filter at runtime.
   const radius =
     typeof c.radius_km === 'number' && Number.isFinite(c.radius_km) && c.radius_km > 0
       ? c.radius_km
@@ -136,11 +134,6 @@ export class BotsController {
     if (!userId) throw new NotFoundException('config not found');
     const config = normalizeConfig(body.config);
 
-    // Eagerly resolve the region's polygon (or confirm the entry has
-    // none and will fall back to centre+radius). Doing it here means a
-    // user paying attention to the save dialog gets immediate
-    // feedback if Nominatim is down or the region is missing, instead
-    // of silently saving a config that produces zero matches.
     if (config.region_id) {
       try {
         await this.regionResolver.ensureResolved(config.region_id);
@@ -163,8 +156,6 @@ export class BotsController {
     });
 
     if (result.created) {
-      // Welcome publish is best-effort: a transient broker hiccup must
-      // not roll back the configuration the user just saved.
       try {
         await this.welcome.emit({
           userId,

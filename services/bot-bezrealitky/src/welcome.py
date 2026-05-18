@@ -1,10 +1,3 @@
-"""Welcome message composition for newly-created Bezrealitky bots.
-
-Published exactly once per new configuration as `notify.bot.welcome`.
-The card embeds an English summary of the chosen filters plus the
-count of currently-stored listings that satisfy them, so the email
-notifier never needs to look anything up.
-"""
 from __future__ import annotations
 
 import html as html_lib
@@ -203,7 +196,6 @@ async def emit_welcome(
     bot_name: str,
     cfg: BotConfig,
 ) -> None:
-    """End-to-end: count matches, render, publish."""
     from . import publisher
 
     region_records = await geo.find_many(

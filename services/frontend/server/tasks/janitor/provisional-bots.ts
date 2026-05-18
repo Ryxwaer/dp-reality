@@ -8,33 +8,9 @@ interface UserBotsRow {
   bots?: StoredBot[]
 }
 
-// How long a wizard popup is allowed to stay in flight before we
-// reclaim its provisional row. Generous (well past a slow typer) but
-// short enough that abandoned tabs do not pile up.
 const PENDING_TTL_MS = 15 * 60 * 1000
-
-// How long a bot-side config row may live without a matching
-// users.bots[] entry before the orphan sweep deletes it. Must comfortably
-// exceed PENDING_TTL_MS so the sweep does not race a legitimate
-// pending->active flip.
 const ORPHAN_TTL_MS = 60 * 60 * 1000
 
-// Two janitor sweeps run together every 5 minutes:
-//
-//   1) Pending-bot sweep — `users.bots[]` rows stuck in status:'pending'
-//      past PENDING_TTL_MS. These are wizard popups the user never
-//      finished. We deleteOne the matching <bot>_config (in case the
-//      bot did write a row before module:saved was lost) and $pull the
-//      provisional users.bots[] entry.
-//
-//   2) Orphan-config sweep — `<bot>_config` rows older than ORPHAN_TTL_MS
-//      whose `_id` appears in no user's bots[]. These are bot-side
-//      writes whose users.bots[] sibling never landed (e.g. the user
-//      closed the tab between bot 201 and module:saved). For each
-//      registry entry we read the bot's `config_collection` and
-//      deleteOne the orphans.
-//
-// Both rules are idempotent.
 export default defineTask({
   meta: {
     name: 'janitor:provisional-bots',
@@ -45,7 +21,6 @@ export default defineTask({
     const db = await getDb()
     const reaped = { pending: 0, orphans: 0 }
 
-    // -- 1) Pending users.bots[] sweep ---------------------------------------
     const pendingThreshold = new Date(now.getTime() - PENDING_TTL_MS)
     const candidates = await db.collection<UserBotsRow>(COLLECTIONS.users)
       .find(
@@ -54,8 +29,6 @@ export default defineTask({
       )
       .toArray()
 
-    // We resolve config_collection per bot_id once for the pass; the
-    // registry rarely changes during a janitor tick.
     const registry = await listRegistry()
     const collectionByBotId = new Map<string, string>()
     for (const r of registry) {
@@ -84,9 +57,6 @@ export default defineTask({
       }
     }
 
-    // -- 2) Orphan <bot>_config sweep ----------------------------------------
-    // Snapshot every config_id currently claimed by a user. Anything
-    // older than ORPHAN_TTL_MS that is NOT in this set is an orphan.
     const claimedIds = await db.collection(COLLECTIONS.users)
       .distinct('bots.config_id') as string[]
     const claimed = new Set<string>(claimedIds.filter(Boolean))

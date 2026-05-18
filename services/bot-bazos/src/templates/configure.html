@@ -7,8 +7,6 @@
   <link rel="preconnect" href="https://rsms.me/" />
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
   <style>
-    /* Tokens mirror the Nuxt UI app shell (zinc + green-500). Body bg
-       is transparent in embedded mode so the parent modal shows through. */
     :root {
       color-scheme: light;
       --bg: #ffffff;
@@ -243,10 +241,6 @@
 
     let isEditMode = false;
 
-    // Same-origin double-submit CSRF: the BFF sets a `csrf-token`
-    // cookie (non-HttpOnly) on the session; we echo it for every
-    // state-changing call through /modules/*. Standalone mode hits the
-    // bot directly and skips this entirely.
     function csrfHeaders() {
       var match = (document.cookie || '').match(/(?:^|; )csrf-token=([^;]*)/);
       return match ? { 'X-CSRF-Token': decodeURIComponent(match[1]) } : {};
@@ -278,11 +272,6 @@
       formMsg: document.getElementById('form-msg')
     };
 
-    // The combined "City or PSČ" input shows a human-readable label
-    // ("Brno-Veveří · 60200"), but the matcher only needs the PSČ. We
-    // keep the canonical value in `selectedPsc`; the display string is
-    // a UI affordance only. Editing the input invalidates the lock
-    // unless the new text is a bare 5-digit PSČ.
     let selectedPsc = null;
     function formatLocLabel(hit) { return hit.city + ' · ' + hit.psc; }
     function setLocFromHit(hit) {
@@ -291,9 +280,6 @@
     }
     function setLocFromPsc(psc) {
       if (!psc) { selectedPsc = null; els.loc.value = ''; return; }
-      // Look up the canonical record so the input shows the city name
-      // alongside the PSČ. If the lookup misses we still keep the PSČ
-      // as the displayed text — the user pasted it, we believe it.
       fetch(apiBase + '/location/suggest?q=' + encodeURIComponent(psc) + '&limit=1', {
         credentials: 'same-origin'
       }).then(r => r.ok ? r.json() : null).then(data => {
@@ -395,10 +381,6 @@
       if (e.key === 'Enter') { e.preventDefault(); els.importBtn.click(); }
     });
 
-    // Combined "City or PSČ" autocomplete. The /location/suggest
-    // endpoint dispatches on whether the query is numeric (PSČ prefix
-    // scan) or text (diacritic-folded city-name search); both return
-    // the same record shape so rendering is uniform.
     let suggestTimer = null;
     let suggestHits = [];
     let suggestIndex = -1;
@@ -440,8 +422,6 @@
       renderSuggest();
     }
     els.loc.addEventListener('input', () => {
-      // Any keystroke invalidates a previously locked PSČ unless the
-      // current text re-validates as a bare 5-digit PSČ.
       const v = els.loc.value.trim();
       selectedPsc = /^\d{5}$/.test(v) ? v : null;
       window.clearTimeout(suggestTimer);

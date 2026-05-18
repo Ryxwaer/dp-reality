@@ -3,9 +3,6 @@ import type { HydratedDocument } from 'mongoose';
 
 export type NotificationDocument = HydratedDocument<NotificationRow>;
 
-// Shared `notifications` collection. The (user_id, bot_id, source_ref)
-// unique index collapses two configs of the same user/bot matching the
-// same listing into one row; `config_ids[]` records which configs hit.
 @Schema({ collection: 'notifications', timestamps: false, versionKey: false })
 export class NotificationRow {
   @Prop({ required: true }) user_id!: string;

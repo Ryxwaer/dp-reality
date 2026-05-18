@@ -25,10 +25,6 @@ interface NotificationRow extends Document {
   sent_at?: Date | null
 }
 
-// The `html` field is composed by the bot service. We re-sanitize it
-// here at read time as defence in depth — the inbox UI v-html's the
-// result, and this is the boundary between server-trusted markup and
-// the browser. Sanitization rules live in server/utils/sanitize-html.
 export default defineEventHandler(async (event): Promise<NotificationDoc[]> => {
   const userId = await requireUserIdHex(event)
   const query = await getValidatedQuery(event, querySchema.parse)

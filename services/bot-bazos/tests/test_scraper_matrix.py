@@ -1,17 +1,3 @@
-"""Guard the category matrix against known-dead bazos.cz combos.
-
-bazos.cz serves the `prodam`/`pronajmu` × property-type grid behind
-URLs like `/{main}/{sub}/`, and a handful of those URLs return 404 —
-no listings ever live there. The scraper used to iterate the full
-Cartesian product and produce a steady stream of error spans in
-Tempo. `_build_category_matrix` now drops the dead combos; this test
-locks that contract in.
-
-Run directly:
-
-    cd services/bot-bazos
-    python -m tests.test_scraper_matrix
-"""
 from __future__ import annotations
 
 import sys

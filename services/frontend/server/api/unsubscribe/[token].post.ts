@@ -18,11 +18,6 @@ const bodySchema = z.object({
   updates: z.array(botUpdateSchema).min(1).max(500)
 })
 
-// Companion of the GET above. Applies opt-out / pause selections to
-// users.bots[] and mirrors `status` flips into the owning bot's
-// <bot>_config.active. Sequential (bot first, BFF cache second) so the
-// matcher stops at least as early as the dashboard claims it has. No
-// auth here — the unsubscribe token is the proof of intent.
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, 'token')
   if (!token) {

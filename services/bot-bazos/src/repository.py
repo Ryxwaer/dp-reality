@@ -34,9 +34,6 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await config.create_index("user_id", background=True)
     await config.create_index("active", background=True)
 
-    # The (user_id, bot_id, source_ref) unique index is co-owned by every
-    # writer of `notifications`; declared here so the bot can boot
-    # against a pristine DB without racing the BFF index plugin.
     notifications = db[NOTIFICATIONS_COLLECTION]
     await notifications.create_index(
         [("user_id", ASCENDING), ("bot_id", ASCENDING), ("source_ref", ASCENDING)],
@@ -54,9 +51,6 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
 
 
 async def migrate(db: AsyncIOMotorDatabase) -> None:
-    """One-shot schema migrations. Safe to run on every boot."""
-    # Removed: `district` field on listings_bazos (was computed from PSČ
-    # prefix but never read by the matcher).
     res = await db[LISTINGS_COLLECTION].update_many(
         {"district": {"$exists": True}},
         {"$unset": {"district": ""}},
@@ -67,12 +61,8 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
         await db[LISTINGS_COLLECTION].drop_index("district_1")
         logger.info("migrate: dropped index district_1")
     except Exception:  # noqa: BLE001
-        # Index might never have existed (fresh DB). Drop is idempotent.
         pass
 
-    # Removed: `city_contains` and `psc_prefix` from config docs (replaced
-    # by `psc` + `radius_km` resolved against the private `bazos_geo`
-    # collection — see src/geo.py).
     res = await db[CONFIG_COLLECTION].update_many(
         {"$or": [
             {"config.city_contains": {"$exists": True}},
@@ -83,8 +73,6 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
     if res.modified_count:
         logger.info("migrate: stripped legacy config fields from %d configs", res.modified_count)
 
-    # Renamed: `title_keywords` -> `keywords` (now matches against title
-    # AND description, so the old name is a misnomer).
     res = await db[CONFIG_COLLECTION].update_many(
         {"config.title_keywords": {"$exists": True}},
         {"$rename": {"config.title_keywords": "config.keywords"}},
@@ -96,12 +84,6 @@ async def migrate(db: AsyncIOMotorDatabase) -> None:
 async def upsert_listings(
     db: AsyncIOMotorDatabase, listings: list[Listing], run_id: str
 ) -> list[Listing]:
-    """Insert-or-update listings; return the subset that were newly inserted.
-
-    `run_id` is stamped via $setOnInsert so re-sightings keep their
-    original run id; the return value is what the matcher iterates over
-    to decide who to notify.
-    """
     if not listings:
         return []
 
@@ -131,8 +113,6 @@ async def upsert_listings(
         )
         return []
 
-    # bulk_write reports inserted docs only by _id; re-fetch to get the
-    # source_ids we need to filter the in-memory listings list.
     cursor = db[LISTINGS_COLLECTION].find({"_id": {"$in": list(inserted_ids)}})
     new_docs = await cursor.to_list(length=None)
     new_source_ids = {d["source_id"] for d in new_docs}
@@ -166,7 +146,6 @@ async def write_config(
     user_id: str,
     config: dict[str, Any],
 ) -> bool:
-    """Idempotent insert. Returns True if a new doc was created."""
     now = datetime.now(UTC)
     result = await db[CONFIG_COLLECTION].update_one(
         {"_id": config_id},
@@ -194,12 +173,6 @@ async def mark_welcome_sent(db: AsyncIOMotorDatabase, config_id: str) -> None:
 async def insert_notifications(
     db: AsyncIOMotorDatabase, rows: list[dict[str, Any]]
 ) -> int:
-    """Idempotent upsert keyed on (user_id, bot_id, source_ref).
-
-    A second matching configuration of the same user grows the existing
-    row's `config_ids` array via `$addToSet` instead of creating a
-    duplicate. Returns the number of newly created rows.
-    """
     if not rows:
         return 0
     now = datetime.now(UTC)

@@ -21,19 +21,6 @@ class RegionParents {
   @Prop() country?: string;
 }
 
-// Bot-private vocabulary of Sreality regions (kraj, okres, obec,
-// městská část, čtvrť, ulice). Seeded once at boot from the bundled
-// `regions.json`. Sreality scopes its numeric ID space by entity type,
-// so the document `_id` is a `<region_typ>:<sreality_id>` composite.
-//
-// `osm_id` and `geometry` are populated lazily on first selection: when
-// a user picks a region in the configure UI we resolve it against
-// Nominatim, store the OSM relation id and the GeoJSON polygon, and
-// reuse it from then on. This mirrors the polygonBuffer semantics that
-// bezrealitky.cz (and bot-bezrealitky) use for radius matching, so a
-// query like "Jihomoravský kraj + 10 km" actually means "kraj polygon
-// expanded outward by 10 km" instead of a 10 km circle around the
-// (often-meaningless) sreality centroid.
 @Schema({ collection: 'sreality_geo', timestamps: false, versionKey: false })
 export class Region {
   @Prop({ required: true, type: String }) _id!: string;

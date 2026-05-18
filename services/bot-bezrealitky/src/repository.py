@@ -1,13 +1,3 @@
-"""MongoDB persistence for the Bezrealitky bot service.
-
-Private collections:
-  - listings_bezrealitky:  raw scraped listings (analytics base + tail)
-  - bezrealitky_config:    one row per user-owned configuration
-  - bezrealitky_geo:       OSM-region anchor index (see src/geo.py)
-  - bezrealitky_meta:      one-shot schema-version stamp
-
-Plus shared writes to `notifications` and `module_registry`.
-"""
 from __future__ import annotations
 
 import logging
@@ -26,10 +16,6 @@ NOTIFICATIONS_COLLECTION = "notifications"
 MODULE_REGISTRY_COLLECTION = "module_registry"
 META_COLLECTION = "bezrealitky_meta"
 
-# Bumped whenever the persisted listing/config/geo schema changes
-# incompatibly. `migrate()` drops the affected collections and stamps
-# this value; the bot then repopulates from the next scrape cycle and
-# the next geo seed.
 _SCHEMA_VERSION = 4
 _GEO_COLLECTION = "bezrealitky_geo"
 
@@ -64,12 +50,6 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
 
 
 async def migrate(db: AsyncIOMotorDatabase) -> None:
-    """Drop legacy listings + configs the first time a new schema rolls out.
-
-    Idempotent via the `bezrealitky_meta` stamp. The cost of dropping is
-    acceptable here: configs are user-rebuildable from the configure
-    page, and listings repopulate on the next scrape cycle.
-    """
     meta = await db[META_COLLECTION].find_one({"_id": "schema"})
     current = int((meta or {}).get("version", 0))
     if current >= _SCHEMA_VERSION:
@@ -166,7 +146,6 @@ async def write_config(
     user_id: str,
     config: dict[str, Any],
 ) -> bool:
-    """Idempotent insert. Returns True if a new doc was created."""
     now = datetime.now(UTC)
     result = await db[CONFIG_COLLECTION].update_one(
         {"_id": config_id},
