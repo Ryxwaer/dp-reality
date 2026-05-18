@@ -22,4 +22,4 @@ images:
   - name: ghcr.io/ryxwaer/dp-reality/email-notifier
     newTag: main-b60d8008-1779063507 # {"$imagepolicy": "flux-system:email-notifier:tag"}
   - name: ghcr.io/ryxwaer/dp-reality/frontend
-    newTag: main-b60d8008-1779063506 # {"$imagepolicy": "flux-system:frontend:tag"}
+    newTag: main-cebf3009-1779066830 # {"$imagepolicy": "flux-system:frontend:tag"}
