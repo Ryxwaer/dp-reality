@@ -1,4 +1,19 @@
 services:
+  mongo:
+    container_name: dp-reality-mongo
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - dp-reality
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   rabbitmq:
     container_name: dp-reality-rabbitmq
     image: rabbitmq:3.13-management-alpine
@@ -47,7 +62,7 @@ services:
     pull_policy: build
     image: dp-reality-bot-bazos:latest
     environment:
-      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/dp-reality}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       SERVICE_ID: bot-bazos
       DISPLAY_NAME: Bazos.cz
@@ -63,6 +78,8 @@ services:
     ports:
       - "8001:8000"
     depends_on:
+      mongo:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       tempo:
@@ -86,7 +103,7 @@ services:
     pull_policy: build
     image: dp-reality-bot-sreality:latest
     environment:
-      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/dp-reality}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       SERVICE_ID: bot-sreality
       DISPLAY_NAME: Sreality.cz
@@ -99,6 +116,8 @@ services:
     ports:
       - "8002:8000"
     depends_on:
+      mongo:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       tempo:
@@ -121,7 +140,7 @@ services:
     pull_policy: build
     image: dp-reality-bot-bezrealitky:latest
     environment:
-      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/dp-reality}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
       SERVICE_ID: bot-bezrealitky
       DISPLAY_NAME: Bezrealitky
@@ -140,6 +159,8 @@ services:
     ports:
       - "8003:8000"
     depends_on:
+      mongo:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       tempo:
@@ -163,21 +184,23 @@ services:
     pull_policy: build
     image: dp-reality-email-notifier:latest
     environment:
-      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/dp-reality}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      MAIL_SMTP_SERVER: mail.ryxwaer.com
+      MAIL_SMTP_SERVER: ${MAIL_SMTP_SERVER:-}
       MAIL_SMTP_PORT: 587
       MAIL_SMTP_LOGIN: ${MAIL_SMTP_LOGIN}
       MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
-      MAIL_FROM_EMAIL: bot@ryxwaer.com
-      MAIL_ALLOWED_RECIPIENT_DOMAINS: ryxwaer.com
+      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL:-}
+      MAIL_ALLOWED_RECIPIENT_DOMAINS: ${MAIL_ALLOWED_RECIPIENT_DOMAINS:-}
       APP_BASE_URL: http://localhost:3000
-      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:-change-me-dev-secret-please-rotate-in-prod}
       OTEL_SERVICE_NAME: email-notifier
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev,service.namespace=dp-reality
     depends_on:
+      mongo:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       tempo:
@@ -198,9 +221,9 @@ services:
     pull_policy: build
     image: dp-reality-frontend-dev:latest
     environment:
-      NUXT_MONGODB_URI: ${MONGODB_URI}
+      NUXT_MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/dp-reality}
       NUXT_RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
-      NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      NUXT_UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:-change-me-dev-secret-please-rotate-in-prod}
       OTEL_SERVICE_NAME: frontend
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
@@ -208,6 +231,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
+      mongo:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
       tempo:
@@ -230,6 +255,7 @@ services:
           path: ./services/frontend/bun.lock
 
 volumes:
+  mongo_data:
   rabbitmq_data:
   tempo_data:
 
